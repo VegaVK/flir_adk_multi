@@ -1,13 +1,14 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>flir_boson_usb</name>
+  <name>flir_ADK_multi</name>
   <version>1.2.1</version>
-  <description>A simple USB camera driver for the FLIR BOSON using OpenCV</description>
+  <description>Package for stitching multiple ADK video feeds. Underlying drivers are from AutonomouStuff</description>
   <license>MIT</license>
-
+<!-- The stuff below has been kept the same because the FLIR camera drivers are from AStuff -->
   <maintainer email="software@autonomoustuff.com">AutonomouStuff Software Development Team</maintainer>
   <author email="jdriscoll@autonomoustuff.com">Joe Driscoll</author>
   <author email="jwhitley@autonomoustuff.com">Joshua Whitley</author>
+  <author email="vvk@tamu.edu">Joshua Whitley</author>
 
   <url type="website">http://wiki.ros.org/flir_boson_usb</url>
   <url type="repository">https://github.com/astuff/flir_boson_usb</url>
