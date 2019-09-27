@@ -18,6 +18,7 @@
  * OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+//Nodelet name changed to flir_adk_multi
 #include <string>
 
 // ROS Includes
@@ -31,7 +32,7 @@ int main(int argc, char** argv)
   nodelet::M_string remap(ros::names::getRemappings());
   nodelet::V_string nargv;
   std::string nodelet_name = ros::this_node::getName();
-  nodelet.load(nodelet_name, "flir_boson_usb/BosonCamera", remap, nargv);
+  nodelet.load(nodelet_name, "flir_adk_multi/BosonCamera", remap, nargv);
   ros::spin();
   return 0;
 }

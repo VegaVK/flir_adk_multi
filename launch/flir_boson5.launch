@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
 <launch>
-  <arg name="namespace" default="flir_boson1"/>
-  <arg name="frame_id" default="boson_camera1" />
+  <arg name="namespace" default="flir_boson5"/>
+  <arg name="frame_id" default="boson_camera5" />
   <arg name="manager" default="$(arg frame_id)_nodelet_manager" />
 
   <!-- the linux file descriptor location for the camera -->
-  <arg name="dev" default="/dev/v4l/by-id/usb-FLIR_Boson_36087-video-index0"/>
+  <arg name="dev" default="/dev/v4l/by-id/usb-FLIR_Boson_36137-video-index0"/>
 
   <!-- valid values are 30.0 or 60.0 for Bosons -->
   <arg name="frame_rate" default="60.0"/>

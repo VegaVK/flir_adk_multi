@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>flir_ADK_multi</name>
+  <name>flir_adk_multi</name>
   <version>1.2.1</version>
   <description>Package for stitching multiple ADK video feeds. Underlying drivers are from AutonomouStuff</description>
   <license>MIT</license>

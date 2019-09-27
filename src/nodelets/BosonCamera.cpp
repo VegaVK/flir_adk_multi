@@ -17,14 +17,14 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
  * OR OTHER DEALINGS IN THE SOFTWARE.
  */
-
+// changed to flir_adk_multi
 #include <pluginlib/class_list_macros.h>
-#include "flir_boson_usb/BosonCamera.h"
+#include "flir_adk_multi/BosonCamera.h"
 
-PLUGINLIB_EXPORT_CLASS(flir_boson_usb::BosonCamera, nodelet::Nodelet)
+PLUGINLIB_EXPORT_CLASS(flir_adk_multi::BosonCamera, nodelet::Nodelet)
 
 using namespace cv;
-using namespace flir_boson_usb;
+using namespace flir_adk_multi;
 
 BosonCamera::BosonCamera() :
   cv_img()

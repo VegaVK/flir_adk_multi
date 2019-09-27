@@ -18,6 +18,8 @@
  * OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+//namespace changed to flir_adk_multi
+
 #ifndef FLIR_BOSON_USB_BOSONCAMERA_H
 #define FLIR_BOSON_USB_BOSONCAMERA_H
 
@@ -47,7 +49,7 @@
 #include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/Image.h>
 
-namespace flir_boson_usb
+namespace flir_adk_multi
 {
 
 enum Encoding
@@ -106,6 +108,6 @@ class BosonCamera : public nodelet::Nodelet
     SensorTypes sensor_type;
 };
 
-}  // namespace flir_boson_usb
+}  // namespace flir_adk_multi
 
 #endif  // FLIR_BOSON_USB_BOSONCAMERA_H
