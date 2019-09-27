@@ -5,7 +5,7 @@
   <arg name="manager" default="$(arg frame_id)_nodelet_manager" />
 
   <!-- the linux file descriptor location for the camera -->
-  <arg name="dev" default="/dev/video2"/>
+  <arg name="dev" default="/dev/video3"/>
 
   <!-- valid values are 30.0 or 60.0 for Bosons -->
   <arg name="frame_rate" default="60.0"/>
