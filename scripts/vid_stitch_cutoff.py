@@ -19,14 +19,14 @@ class vid_stitch:
 
     def __init__(self):
         self.bridge=CvBridge()
-        self.image_pub = rospy.Publisher("stitched_image_2",Image,queue_size=100)
+        self.image_pub = rospy.Publisher("stitched_image",Image,queue_size=100)
         self.image1=np.array([1])
         self.image2=self.image1
         self.overlapPix=180# number of pixels (horizontal) to average over
 
         rospy.loginfo('Published stitched image')
-        rospy.Subscriber('/flir_boson1/image_rect', Image, self.buildimage1)
-        rospy.Subscriber('/flir_boson2/image_rect', Image, self.buildimage2)
+        rospy.Subscriber('/flir_boson3/image_rect', Image, self.buildimage1)
+        rospy.Subscriber('/flir_boson4/image_rect', Image, self.buildimage2)
 
     
     def buildimage1(self,data):

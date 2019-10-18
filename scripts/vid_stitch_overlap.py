@@ -19,14 +19,14 @@ class vid_stitch:
 
     def __init__(self):
         self.bridge=CvBridge()
-        self.image_pub = rospy.Publisher("stitched_image",Image,queue_size=100)
+        self.image_pub = rospy.Publisher("stitched_image3",Image,queue_size=100)
         self.image1=np.array([1])
         self.image2=self.image1
         self.overlapPix=180# number of pixels (horizontal) to average over
 
         rospy.loginfo('Published stitched image')
-        rospy.Subscriber('/flir_boson1/image_rect', Image, self.buildimage1)
-        rospy.Subscriber('/flir_boson2/image_rect', Image, self.buildimage2)
+        rospy.Subscriber('/flir_boson3/image_rect', Image, self.buildimage1)
+        rospy.Subscriber('/warped_image', Image, self.buildimage2)
 
     
     def buildimage1(self,data):
@@ -38,6 +38,8 @@ class vid_stitch:
     def stitchfun(self):
         # For two cameras, basic stitching, average over common pixels
         avgArray=(self.image1[:,640-self.overlapPix:640]+self.image2[:,0:self.overlapPix])/2
+        #Taking Max instead of average
+        #avgArray=np.maximum(self.image1[:,640-self.overlapPix:640],self.image2[:,0:self.overlapPix])
         self.Final=np.hstack((self.image1[:,0:640-self.overlapPix],avgArray,self.image2[:,self.overlapPix:640]))
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.Final, "mono8"))
         #print(self.Final.shape)
