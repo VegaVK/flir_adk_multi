@@ -29,8 +29,8 @@ class vid_stitch:
 
         self.homographyMat=np.zeros((3,3))
         self.homographyMat[0,:]=np.array([1,0.00,0])
-        self.homographyMat[1,:]=np.array([0.00,1,22])
-        self.homographyMat[2,:]=np.array([0.0001,0.00,1])
+        self.homographyMat[1,:]=np.array([0.00,1,0])
+        self.homographyMat[2,:]=np.array([0.01,0.00,1])
         th=np.deg2rad(20)# rotation about vertical axis, of camera two wrt to camera 1
         self.Tmat=np.array([[np.cos(th),0,np.sin(th),0],[0,1,0,0.1],[-np.sin(th),0,np.cos(th),0],[0,0,0,1]])
 

@@ -24,7 +24,7 @@ class vid_stitch:
         self.image_pub2 = rospy.Publisher("stitched_image2",Image,queue_size=100)
         self.image_pub3 = rospy.Publisher("stitched_image3",Image,queue_size=100)
         self.warp_pub=rospy.Publisher("warped_image",Image,queue_size=100)
-        self.overlapPix=256# number of pixels (horizontal) to average over
+        self.overlapPix=279# number of pixels (horizontal) to average over
 
         distPlane=6# Distance from camera to plane of image
         trlCam=np.reshape(np.array([0.09,0,0]),(3,1))# translation vector between the two cameras
@@ -35,6 +35,10 @@ class vid_stitch:
         self.homographyMat[0,:]=np.array([1,0.00,0])
         self.homographyMat[1,:]=np.array([0.00,1,25])
         self.homographyMat[2,:]=np.array([0.0005,0.00,1])
+
+        self.homographyMat[0,:]=np.array([1,0.00,0])
+        self.homographyMat[1,:]=np.array([0.00,1,2])
+        self.homographyMat[2,:]=np.array([-0.00015,0.00,1])
         
         # Rewriting from Matlab:
         #self.homographyMat=np.array([[-283.7450,59.375,0.299],[26.439,-433.2,0.0444],[-191718.6614,-8935.92,-485.5138]])
@@ -75,7 +79,6 @@ class vid_stitch:
         self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.Overlap1, "mono8"))
         self.image_pub2.publish(self.bridge.cv2_to_imgmsg(self.Overlap2, "mono8"))
         self.image_pub3.publish(self.bridge.cv2_to_imgmsg(self.Overlap3, "mono8"))
-        self.image_pub2 = rospy.Publisher("stitched_image2",Image,queue_size=100)
         rospy.loginfo('Published warped and stitched image')
         
         
