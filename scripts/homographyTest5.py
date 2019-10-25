@@ -23,7 +23,7 @@ class vid_stitch:
         self.image_pub1 = rospy.Publisher("DirectStitch",Image,queue_size=100)
         self.image_pub2 = rospy.Publisher("WarpStitch1",Image,queue_size=100)
         self.warp_pub=rospy.Publisher("warped_image",Image,queue_size=100)
-        self.overlapPix=275
+        self.overlapPix=273
         self.smoothingPix=10 # Number of pixels to smooth over
         # Create gradient arrays for image 1 and image 2
         self.gradientArr1=np.linspace(1.0,0.0, self.smoothingPix, endpoint=True)
