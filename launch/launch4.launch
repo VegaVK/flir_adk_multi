@@ -1,5 +1,7 @@
 <?xml version="1.0"?>
 <launch>
+  <include file="$(find flir_adk_multi)/launch/flir_boson1.launch"/>
+  <include file="$(find flir_adk_multi)/launch/flir_boson2.launch"/>
   <include file="$(find flir_adk_multi)/launch/flir_boson3.launch"/>
   <include file="$(find flir_adk_multi)/launch/flir_boson4.launch"/>
 </launch>

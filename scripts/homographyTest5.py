@@ -6,7 +6,7 @@ from cv_bridge import CvBridge, CvBridgeError
 import cv2
 from sensor_msgs.msg import Image
 import numpy as np
-#### BUILT FOR 2 CAMERAS CURRENTLY
+#### BUILT FOR 2 CAMERAS CURRENTLY - USE THIS FOR ROSBAGS COLLECTED IN OCT 2019
 
 def main():
     rospy.init_node('Some_publisher', anonymous=True)
@@ -43,6 +43,7 @@ class vid_stitch:
 
     def stitchfun(self):
         self.Warped = cv2.warpPerspective(self.image2,self.homographyMat1,(self.image2.shape[1],self.image2.shape[0]))
+        print(self.image2.shape[0])
         self.Overlap1=np.hstack((self.image1,self.image2[:,(self.overlapPix):640]))
         SmoothingArray1=np.multiply(self.image1[:,640-self.smoothingPix:640],self.gradientArr1)+np.multiply(self.Warped[:,self.overlapPix:self.overlapPix+self.smoothingPix],self.gradientArr2)
         self.Overlap2=np.hstack((self.image1[:,0:640-(self.smoothingPix)],np.uint8(np.round(SmoothingArray1,0)),self.Warped[:,(self.smoothingPix+self.overlapPix):640]))
