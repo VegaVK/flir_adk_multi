@@ -22,26 +22,29 @@ class vid_stitch:
         self.bridge=CvBridge()
         self.PanoPub = rospy.Publisher("Thermal_Panorama",Image,queue_size=100)
         self.TempWarpPub=rospy.Publisher("Warp1_2",Image,queue_size=100)
-        self.overlapPixLeft=175
-        self.overlapPixRight=153
-        self.smoothingPix=5 # Number of pixels to smooth over
+        self.overlapPix12=180
+        self.overlapPix23=160
+        self.overlapPix34=200
+        self.overlapPix45=190 # Guess, needs to be tuned
+        
+        self.smoothingPix=15# Number of pixels to smooth over
         # Create gradient arrays for Left and Right
         self.gradientArrLeft=np.linspace(1.0,0.0, self.smoothingPix, endpoint=True)
         self.gradientArrLeft=np.tile(self.gradientArrLeft,(512,1))
         self.gradientArrRight=np.linspace(0.0,1.0, self.smoothingPix, endpoint=True)
         self.gradientArrRight=np.tile(self.gradientArrRight,(512,1))
 
-        self.homographyMat1_2=np.array([[1,0,0],[0,1,-6],[0,0.00,1]])
-        self.homographyMat2_3=np.array([[1,0,0],[0,1,6],[0,0.00,1]])
-        self.homographyMat3_4=np.array([[1,0,0],[0,1,0],[-0.00018,0.00,1]])
-        self.homographyMat4_5=np.array([[1,0,0],[0,1,0],[-0.00018,0.00,1]])
+        self.homographyMat1_2=np.array([[1,0,0],[0,1,0],[0.00024,0.00,0.853]])
+        self.homographyMat2_3=np.array([[1,0,0],[0,1,0],[0.00012,0.00,0.83]])
+        self.homographyMat3_4=np.array([[1,0,0],[0,1,0],[-0.00024,0.00,1]])
+        self.homographyMat4_5=np.array([[1,0,0],[0,1,0],[-0.00024,0.00,1]]) # Guess, needs to be tuned
         
         rospy.Subscriber('/flir_boson1/image_rect', Image, self.buildimage1)
         rospy.Subscriber('/flir_boson2/image_rect', Image, self.buildimage2)
         rospy.Subscriber('/flir_boson3/image_rect', Image, self.buildimage3)
         rospy.Subscriber('/flir_boson4/image_rect', Image, self.buildimage4)
-        #rospy.Subscriber('/flir_boson5/image_rect', Image, self.buildimage5)
-        self.image5=np.uint8(np.zeros((512,640)))
+        rospy.Subscriber('/flir_boson5/image_rect', Image, self.buildimage5)
+         
     
     def buildimage1(self,data):
         self.image1=self.bridge.imgmsg_to_cv2(data, "mono8")
@@ -54,10 +57,11 @@ class vid_stitch:
     
     def buildimage4(self,data):
         self.image4=self.bridge.imgmsg_to_cv2(data, "mono8")
-        self.stitchfun() # Put this in the LAST buildimage() callback %%%%%%%% To be changed when switching to 5 cameras
         
-    #def buildimage5(self,data):
-    #    self.image5=self.bridge.imgmsg_to_cv2(data, "mono8")
+        
+    def buildimage5(self,data):
+        self.image5=self.bridge.imgmsg_to_cv2(data, "mono8")
+        self.stitchfun() # Put this in the LAST buildimage() callback 
         
 
     def stitchfun(self):
@@ -65,19 +69,19 @@ class vid_stitch:
         self.Warped5 = cv2.warpPerspective(self.image5,self.homographyMat4_5,(640,512))
         self.Warped1 = cv2.warpPerspective(self.image1,self.homographyMat1_2,(640,512))
 
-        SmoothingArray1_2=np.multiply(self.Warped1[:,-(self.smoothingPix+self.overlapPixLeft):-self.overlapPixLeft],self.gradientArrLeft)+np.multiply(self.image2[:,0:self.smoothingPix],self.gradientArrRight)
-        SmoothingArray4_5=np.multiply(self.image4[:,-self.smoothingPix:],self.gradientArrLeft)+np.multiply(self.Warped5[:,self.overlapPixRight:self.overlapPixRight+self.smoothingPix],self.gradientArrRight)
+        SmoothingArray1_2=np.multiply(self.Warped1[:,-(self.smoothingPix+self.overlapPix12):-self.overlapPix12],self.gradientArrLeft)+np.multiply(self.image2[:,0:self.smoothingPix],self.gradientArrRight)
+        SmoothingArray4_5=np.multiply(self.image4[:,-self.smoothingPix:],self.gradientArrLeft)+np.multiply(self.Warped5[:,self.overlapPix45:self.overlapPix45+self.smoothingPix],self.gradientArrRight)
         #Create combined Cam1-2 and Cam 4-5 images
-        self.Warped4_5=np.hstack((self.image4[:,0:-(self.smoothingPix)],np.uint8(np.round(SmoothingArray4_5,0)),self.Warped5[:,(self.smoothingPix+self.overlapPixRight):]))
-        self.Warped1_2=np.hstack((self.Warped1[:,0:-(self.smoothingPix+self.overlapPixLeft)],np.uint8(np.round(SmoothingArray1_2,0)),self.image2[:,self.smoothingPix:]))
+        self.Warped4_5=np.hstack((self.image4[:,0:-(self.smoothingPix)],np.uint8(np.round(SmoothingArray4_5,0)),self.Warped5[:,(self.smoothingPix+self.overlapPix45):]))
+        self.Warped1_2=np.hstack((self.Warped1[:,0:-(self.smoothingPix+self.overlapPix12)],np.uint8(np.round(SmoothingArray1_2,0)),self.image2[:,self.smoothingPix:]))
         #Now warp these to Cam3 Frame
-        self.Warped3_45=cv2.warpPerspective(self.Warped4_5,self.homographyMat3_4,((2*640-self.overlapPixRight),512))
-        self.Warped12_3=cv2.warpPerspective(self.Warped1_2,self.homographyMat2_3,((2*640-self.overlapPixLeft),512))
+        self.Warped3_45=cv2.warpPerspective(self.Warped4_5,self.homographyMat3_4,((2*640-self.overlapPix34),512))
+        self.Warped12_3=cv2.warpPerspective(self.Warped1_2,self.homographyMat2_3,((2*640-self.overlapPix23),512))
 
-        SmoothingArray12_3=np.multiply(self.Warped12_3[:,-(self.smoothingPix+self.overlapPixLeft):-self.overlapPixLeft],self.gradientArrLeft)+np.multiply(self.image3[:,0:self.smoothingPix],self.gradientArrRight)
-        SmoothingArray3_45=np.multiply(self.image3[:,-self.smoothingPix:],self.gradientArrLeft)+np.multiply(self.Warped3_45[:,self.overlapPixRight:self.overlapPixRight+self.smoothingPix],self.gradientArrRight)
+        SmoothingArray12_3=np.multiply(self.Warped12_3[:,-(self.smoothingPix+self.overlapPix23):-self.overlapPix23],self.gradientArrLeft)+np.multiply(self.image3[:,0:self.smoothingPix],self.gradientArrRight)
+        SmoothingArray3_45=np.multiply(self.image3[:,-self.smoothingPix:],self.gradientArrLeft)+np.multiply(self.Warped3_45[:,self.overlapPix34:self.overlapPix34+self.smoothingPix],self.gradientArrRight)
         #Stitch all of them together
-        self.Panorama=np.hstack((self.Warped12_3[:,0:-(self.overlapPixLeft+self.smoothingPix)],np.uint8(np.round(SmoothingArray12_3,0)),self.image3[:,self.smoothingPix:-(self.smoothingPix)],np.uint8(np.round(SmoothingArray3_45,0)),self.Warped3_45[:,(self.smoothingPix+self.overlapPixRight):]))
+        self.Panorama=np.hstack((self.Warped12_3[:,0:-(self.overlapPix23+self.smoothingPix)],np.uint8(np.round(SmoothingArray12_3,0)),self.image3[:,self.smoothingPix:-(self.smoothingPix)],np.uint8(np.round(SmoothingArray3_45,0)),self.Warped3_45[:,(self.smoothingPix+self.overlapPix34):]))
                         
         # Publishers
         self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "mono8"))
