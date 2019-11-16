@@ -25,7 +25,7 @@ class vid_stitch:
         self.overlapPix12=180
         self.overlapPix23=160
         self.overlapPix34=200
-        self.overlapPix45=190 # Guess, needs to be tuned
+        self.overlapPix45=200 # Guess, needs to be tuned
         
         self.smoothingPix=15# Number of pixels to smooth over
         # Create gradient arrays for Left and Right
@@ -35,9 +35,9 @@ class vid_stitch:
         self.gradientArrRight=np.tile(self.gradientArrRight,(512,1))
 
         self.homographyMat1_2=np.array([[1,0,0],[0,1,0],[0.00024,0.00,0.853]])
-        self.homographyMat2_3=np.array([[1,0,0],[0,1,0],[0.00012,0.00,0.83]])
-        self.homographyMat3_4=np.array([[1,0,0],[0,1,0],[-0.00024,0.00,1]])
-        self.homographyMat4_5=np.array([[1,0,0],[0,1,0],[-0.00024,0.00,1]]) # Guess, needs to be tuned
+        self.homographyMat2_3=np.array([[1,0,0],[0,1,-2],[0.00012,0.00,0.83]])
+        self.homographyMat3_4=np.array([[1,0,0],[0,1,8],[-0.00024,0.00,1]])
+        self.homographyMat4_5=np.array([[1,0,0],[0,1,-8],[-0.00024,0.00,1]]) # Guess, needs to be tuned
         
         rospy.Subscriber('/flir_boson1/image_rect', Image, self.buildimage1)
         rospy.Subscriber('/flir_boson2/image_rect', Image, self.buildimage2)
