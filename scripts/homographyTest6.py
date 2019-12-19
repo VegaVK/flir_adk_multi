@@ -82,9 +82,10 @@ class vid_stitch:
         SmoothingArray3_45=np.multiply(self.image3[:,-self.smoothingPix:],self.gradientArrLeft)+np.multiply(self.Warped3_45[:,self.overlapPix34:self.overlapPix34+self.smoothingPix],self.gradientArrRight)
         #Stitch all of them together
         self.Panorama=np.hstack((self.Warped12_3[:,0:-(self.overlapPix23+self.smoothingPix)],np.uint8(np.round(SmoothingArray12_3,0)),self.image3[:,self.smoothingPix:-(self.smoothingPix)],np.uint8(np.round(SmoothingArray3_45,0)),self.Warped3_45[:,(self.smoothingPix+self.overlapPix34):]))
-                        
+        # Conversion to RGB
+        self.Panorama=cv2.cvtColor(self.Panorama,cv2.COLOR_GRAY2RGB)                
         # Publishers
-        self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "mono8"))
+        self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "rgb8"))
         self.TempWarpPub.publish(self.bridge.cv2_to_imgmsg(self.Warped1_2, "mono8"))
         rospy.loginfo('Published Panorama')
         
