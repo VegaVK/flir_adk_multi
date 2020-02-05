@@ -48,6 +48,7 @@
 
 #include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/Image.h>
+#include <std_msgs/UInt16.h>
 
 namespace flir_adk_multi
 {
@@ -81,11 +82,15 @@ class BosonCamera : public nodelet::Nodelet
     void captureAndPublish(const ros::TimerEvent& evt);
 
     ros::NodeHandle nh, pnh;
+    ros::Publisher MaxAgcTopic, MinAgcTopic;
     std::shared_ptr<camera_info_manager::CameraInfoManager> camera_info;
     std::shared_ptr<image_transport::ImageTransport> it;
     image_transport::CameraPublisher image_pub;
     cv_bridge::CvImage cv_img;
     sensor_msgs::ImagePtr pub_image;
+    // for AGC extraction
+    std_msgs::UInt16 MinAGC;
+    std_msgs::UInt16 MaxAGC;
     ros::Timer capture_timer;
     int32_t width, height;
     int32_t fd;

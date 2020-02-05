@@ -62,13 +62,11 @@ class vid_stitch:
     def buildimage5(self,data):
         self.image5=self.bridge.imgmsg_to_cv2(data, "mono8")
         self.stitchfun() # Put this in the LAST buildimage() callback 
-        
-
+   
     def stitchfun(self):
         # First convert Cam1 and Cam5 to Cam2 and Cam4 frames respectively
         self.Warped5 = cv2.warpPerspective(self.image5,self.homographyMat4_5,(640,512))
         self.Warped1 = cv2.warpPerspective(self.image1,self.homographyMat1_2,(640,512))
-
         SmoothingArray1_2=np.multiply(self.Warped1[:,-(self.smoothingPix+self.overlapPix12):-self.overlapPix12],self.gradientArrLeft)+np.multiply(self.image2[:,0:self.smoothingPix],self.gradientArrRight)
         SmoothingArray4_5=np.multiply(self.image4[:,-self.smoothingPix:],self.gradientArrLeft)+np.multiply(self.Warped5[:,self.overlapPix45:self.overlapPix45+self.smoothingPix],self.gradientArrRight)
         #Create combined Cam1-2 and Cam 4-5 images

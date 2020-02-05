@@ -44,6 +44,8 @@ void BosonCamera::onInit()
       new camera_info_manager::CameraInfoManager(nh));
   it = std::shared_ptr<image_transport::ImageTransport>(new image_transport::ImageTransport(nh));
   image_pub = it->advertiseCamera("image_raw", 1);
+  MaxAgcTopic = nh.advertise<std_msgs::UInt16>("MaxAgcTopic",1000);
+  MinAgcTopic = nh.advertise<std_msgs::UInt16>("MinAgcTopic",1000);
 
   bool exit = false;
 
@@ -150,7 +152,8 @@ void BosonCamera::agcBasicLinear(const Mat& input_16,
         max1 = value3;
     }
   }
-
+MaxAgcTopic.publish(max1);
+MinAgcTopic.publish(min1);
   for (int i = 0; i < height; i++)
   {
     for (int j = 0; j < width; j++)
@@ -164,6 +167,9 @@ void BosonCamera::agcBasicLinear(const Mat& input_16,
     }
   }
 }
+
+
+
 
 bool BosonCamera::openCamera()
 {
@@ -354,6 +360,8 @@ void BosonCamera::captureAndPublish(const ros::TimerEvent& evt)
     // -----------------------------
     // RAW16 DATA
     agcBasicLinear(thermal16, &thermal16_linear, height, width);
+    // Change line above to agcBasicLinear if req, testing to see if removing AGC works well:
+
 
     // Display thermal after 16-bits AGC... will display an image
     if (!zoom_enable)

@@ -1,8 +1,43 @@
 <?xml version="1.0"?>
+<!-- V4L Serial numbers need to be changed if required in 'dev'-->
 <launch>
-  <include file="$(find flir_adk_multi)/launch/flir_boson1.launch"/>
-  <include file="$(find flir_adk_multi)/launch/flir_boson2.launch"/>
-  <include file="$(find flir_adk_multi)/launch/flir_boson3.launch"/>
-  <include file="$(find flir_adk_multi)/launch/flir_boson4.launch"/>
-  <include file="$(find flir_adk_multi)/launch/flir_boson5.launch"/>
+<!-- VidMode can be YUV or RAW16, will be passed to all cameras-->
+<arg name="vidMode" default="RAW16"/>
+<!-- Frame Rate for all cameras-->
+<arg name="frameRate" default="30.0"/>
+  <include file="$(find flir_adk_multi)/launch/flir_boson.launch">
+      <arg name="dev" default="/dev/v4l/by-id/usb-FLIR_Boson_36087-video-index0"/>
+      <arg name="video_mode" value="$(arg vidMode)"/>
+      <arg name="namespace" value="flir_boson1"/>
+      <arg name="frame_id" value="boson_camera1" />
+      <arg name="frame_rate" value="$(arg frameRate)"/>
+      </include>
+  <include file="$(find flir_adk_multi)/launch/flir_boson.launch">
+      <arg name="dev" default="/dev/v4l/by-id/usb-FLIR_Boson_29731-video-index0"/>
+      <arg name="video_mode" value="$(arg vidMode)"/>
+      <arg name="namespace" value="flir_boson2"/>
+      <arg name="frame_id" value="boson_camera2" />
+      <arg name="frame_rate" value="$(arg frameRate)"/>
+      </include>
+  <include file="$(find flir_adk_multi)/launch/flir_boson.launch">
+      <arg name="dev" default="/dev/v4l/by-id/usb-FLIR_Boson_36086-video-index0"/>
+      <arg name="video_mode" value="$(arg vidMode)"/>
+      <arg name="namespace" value="flir_boson3"/>
+      <arg name="frame_id" value="boson_camera3" />
+      <arg name="frame_rate" value="$(arg frameRate)"/>
+      </include>
+  <include file="$(find flir_adk_multi)/launch/flir_boson.launch">
+      <arg name="dev" default="/dev/v4l/by-id/usb-FLIR_Boson_36144-video-index0"/>
+      <arg name="video_mode" value="$(arg vidMode)"/>
+      <arg name="namespace" value="flir_boson4"/>
+      <arg name="frame_id" value="boson_camera4" />
+      <arg name="frame_rate" value="$(arg frameRate)"/>
+      </include>
+  <include file="$(find flir_adk_multi)/launch/flir_boson.launch">
+      <arg name="dev" default="/dev/v4l/by-id/usb-FLIR_Boson_36137-video-index0"/>
+      <arg name="video_mode" value="$(arg vidMode)"/>
+      <arg name="namespace" value="flir_boson5"/>
+      <arg name="frame_id" value="boson_camera5" />
+      <arg name="frame_rate" value="$(arg frameRate)"/>
+      </include>
 </launch>
