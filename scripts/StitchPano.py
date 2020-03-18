@@ -5,7 +5,6 @@ from cv_bridge import CvBridge, CvBridgeError
 import cv2
 from sensor_msgs.msg import Image
 import numpy as np
-#### BUILT FOR 5 Cameras ( #5 is currently commented out)
 
 def main():
     rospy.init_node('Some_publisher', anonymous=True)
@@ -26,7 +25,7 @@ class vid_stitch:
         self.overlapPix34=200
         self.overlapPix45=200 # Guess, needs to be tuned
         
-        self.smoothingPix=15# Number of pixels to smooth over
+        self.smoothingPix=1# Number of pixels to smooth over
         # Create gradient arrays for Left and Right
         self.gradientArrLeft=np.linspace(1.0,0.0, self.smoothingPix, endpoint=True)
         self.gradientArrLeft=np.tile(self.gradientArrLeft,(512,1))
@@ -36,7 +35,7 @@ class vid_stitch:
         self.homographyMat1_2=np.array([[1,0,0],[0,1,-1],[0.00024,0.00,0.853]])
         self.homographyMat2_3=np.array([[1,0,0],[0,1,-5],[0.00012,0.00,0.83]])
         self.homographyMat3_4=np.array([[1,0,0],[0,1,0],[-0.00036,0.00,1]])
-        self.homographyMat4_5=np.array([[1,0,0],[0,1,0],[-0.00036,0.00,1]]) # Guess, needs to be tuned
+        self.homographyMat4_5=np.array([[1,0,0],[0,1,0],[-0.00024,0.00,1]]) # Guess, needs to be tuned
         
         rospy.Subscriber('/flir_boson1/image_rect', Image, self.buildimage1)
         rospy.Subscriber('/flir_boson2/image_rect', Image, self.buildimage2)
@@ -80,6 +79,7 @@ class vid_stitch:
         #Stitch all of them together
         self.Panorama=np.hstack((self.Warped12_3[:,0:-(self.overlapPix23+self.smoothingPix)],np.uint8(np.round(SmoothingArray12_3,0)),self.image3[:,self.smoothingPix:-(self.smoothingPix)],np.uint8(np.round(SmoothingArray3_45,0)),self.Warped3_45[:,(self.smoothingPix+self.overlapPix34):]))
         # Conversion to RGB
+        #print(self.Panorama.shape)
         self.Panorama=cv2.cvtColor(self.Panorama,cv2.COLOR_GRAY2RGB)                
         # Publishers
         self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "rgb8"))
