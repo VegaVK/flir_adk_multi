@@ -12,10 +12,24 @@ find_package(catkin REQUIRED
   sensor_msgs
   camera_info_manager
   roslint
+  std_msgs
+  geometry_msgs
+  message_generation
 )
 
 find_package(OpenCV REQUIRED)
 
+add_message_files(
+  FILES
+  track.msg
+  trackArray.msg
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+  geometry_msgs
+)
 catkin_package(
   CATKIN_DEPENDS
   camera_info_manager
@@ -39,6 +53,7 @@ add_dependencies(${PROJECT_NAME}_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
 )
+
 
 target_link_libraries(${PROJECT_NAME}_node
   ${OpenCV_LIBRARIES}
