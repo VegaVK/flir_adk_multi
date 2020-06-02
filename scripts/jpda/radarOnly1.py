@@ -26,16 +26,45 @@ def main():
 class jpda_class:
 
     def __init__(self):
-        self.Predictions=rospy.Publisher("JPDA",trackArray, queue_size=100) 
+        self.TrackPub=rospy.Publisher("JPDA",trackArray, queue_size=100) 
         self.YoloClassList=[0,1,2,3,5,7]
+        self.GateThresh =2 # Scaling factor, threshold for gating
         rospy.Subscriber('darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
         rospy.Subscriber('/radar_front', RadarObjects, self.RdrMsrmtsNuSc)
         # rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsMKZ)
+        #TODO: if-else switches for trackInitiator, trackDestructor, and Kalman functions for radar and camera
         
-        # trackManager()
-        # nearestNAlg()
-        # JPDAalg()
+        # self.nearestNAlg()
+        # self.JPDAalg()
+    def trackInitiator(self,SensorReadings):
+        if self.CurrentTracks in locals():
+            #Check new measurements and initiate candiates
+        else:
+            self.CurrentTracks=[]
 
+    def trackDestructor(self,SensorReadings)
+
+    def trackManager(self,SensorReadings):
+        self.trackInitiator(SensorReadings)
+        self.NewValidMsmts=self.ValidationGate(data1,self.CurrentTracks)
+        self.trackDestructor(SensorReadings)
+        
+    def KalmanPredictor(self,CurrentTracks):
+        PredictedTracks=CurrentTracks
+        return PredictedTracks
+
+    def ValidationGate(self,SensorData,CurrentTracks):
+        if isinstance(SensorData[0],CamObj): #
+            PredictedTracks=self.KalmanPredictor(CurrentTracks)
+            ValidatedMsmts=np.empty(len(PredictedTracks))
+            for idx in range(len(PredictedTracks)):
+                for jdx in range(len(SensorData))
+                    if (PredictedTracks-SensorData[jdx]).T*np.inv(S)*(PredictedTracks-SensorData[jdx])<=self.GateThresh^2:
+                        ValidatedMsmts[idx].append(SensorData[jdx])
+            return ValidatedMsmts
+    
+        elif isinstance(SensorData[0],RadarObj):
+            print('Radar, not yet implemented')
 
 
     def CamMsrmts(self,data):
@@ -48,6 +77,7 @@ class jpda_class:
                 self.CamReadings[-1].PxWidth=(data.bounding_boxes[idx].xmax-data.bounding_boxes[idx].xmin)
                 self.CamReadings[-1].PxHeight=(data.bounding_boxes[idx].ymax-data.bounding_boxes[idx].ymin)
                 self.CamReadings[-1].id=data.bounding_boxes[idx].id
+        self.trackManager(self.CamReadings)
         # for elem in self.TempReadings:
         #     if elem:
         #         self.CamReadings.append(elem)
@@ -65,7 +95,8 @@ class jpda_class:
             self.RdrReadings[-1].vx=data.objects[idx].vx
             self.RdrReadings[-1].vy=data.objects[idx].vy
             self.RdrReadings[-1].stamp=data.header.stamp
-        print(self.RdrReadings[3].stamp)
+        #print(self.RdrReadings[3].stamp)
+        
 
 
 if __name__=='__main__':
