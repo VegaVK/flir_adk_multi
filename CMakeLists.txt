@@ -21,7 +21,7 @@ find_package(OpenCV REQUIRED)
 
 add_message_files(
   FILES
-  track.msg
+  track1.msg
   trackArray.msg
 )
 
