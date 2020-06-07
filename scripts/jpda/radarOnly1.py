@@ -74,13 +74,10 @@ class jpda_class:
         pass
 
     def trackManager(self,SensorData):
+        SensorData=self.ValidationGate(SensorData) #Clean the incoming data
         self.trackInitiator(SensorData)
-        SensorData=self.ValidationGate(SensorData,self.CurrentTracks)
         self.trackMaintenance(SensorData)
         self.trackDestructor(SensorData)
-        
-
-
 
                 
     def DataAssociation(self,SensorData,Method):
@@ -99,7 +96,6 @@ class jpda_class:
                 PropagatedTracks.tracks[idx].pose.x=PredictedTracks.tracks[idx].twist.linear.x*delT
                 PropagatedTracks.tracks[idx].pose.y=PredictedTracks.tracks[idx].twist.linear.y*delT
             return PropagatedTracks
-
         elif isinstance(SensorData[0],RadarObj):
             PropagatedTracks=self.CurrentTracks
             for idx in len(PropagatedTracks.tracks):
@@ -124,10 +120,9 @@ class jpda_class:
         delT=(SensorData[0].header.stamp-self.CurrentTracks.header.stamp)/1e9 # from nano seconds
         if isinstance(SensorData[0],CamObj): 
             pass
-        
         elif isinstance(SensorData[0],RadarObj): # Use EKF from Truck Platooning paper:
             EstimatedTracks=self.CurrentTracks
-            Yk=self.DataAssociation(SensorData)
+            Yk=self.DataAssociation(SensorData,'NN')#Set of measurements associated with self.CurrentTracks; array of same size
             for idx in len(EstimatedTracks.tracks):
                 x=EstimatedTracks.tracks[idx].x
                 y=EstimatedTracks.tracks[idx].y
@@ -160,13 +155,7 @@ class jpda_class:
     def ValidationGate(self,SensorData):
         SensorOutData=[]
         if isinstance(SensorData[0],CamObj): #
-            PredictedTracks=self.KalmanPredictor(SensorData)
-            SensorOutData=np.empty(len(PredictedTracks))
-            for idx in range(len(PredictedTracks)):
-                for jdx in range(len(SensorData))
-                    if (PredictedTracks-SensorData[jdx]).T*np.inv(S)*(PredictedTracks-SensorData[jdx])<=self.GateThresh^2:
-                        SensorOutData[idx].append(SensorData[jdx])
-        
+            pass
         if isinstance(SensorData[0],RadarObj):
             for idx in range(len(self.CurrentTracks.tracks)):
                 StateVec=np.array([self.CurrentTracks.tracks[idx].x, self.CurrentTracks.tracks[idx].y,self.CurrentTracks.tracks[idx].Vc,self.CurrentTracks.tracks[idx].B])
@@ -184,11 +173,7 @@ class jpda_class:
                     Temp=(y[jdx]-y_est[idx]).T*SkInv*(y[jdx]-y_est[idx])
                     if (Temp<=self.GateThresh^2):
                         SensorOutData[idx].append(SensorData[jdx])
-            
         return SensorOutData
-
-
-
 
     def CamMsrmts(self,data):
         self.CamReadings=[]
@@ -205,10 +190,8 @@ class jpda_class:
         #     if elem:
         #         self.CamReadings.append(elem)
         #print(len(self.CamReadings))
-
     #TODO: create new RdrMsrmtsMKZ to work with MKZ.
     #def RdrMsrmtsNuSc(self,data): 
-
 
     def RdrMsrmtsNuSc(self,data): 
         self.RdrReadings=[]
