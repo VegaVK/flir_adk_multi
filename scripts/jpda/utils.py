@@ -11,6 +11,7 @@ from darknet_ros_msgs.msg import BoundingBoxes
 from std_msgs.msg import Float32MultiArray
 from std_msgs.msg import MultiArrayDimension
 
+
 def Mat_buildROS(matrixDat): # Converts numpy array to ROS Array
         temp=Float32MultiArray()
         MatSize=matrixDat.shape[0]*matrixDat.shape[1]
@@ -27,7 +28,7 @@ def Mat_buildROS(matrixDat): # Converts numpy array to ROS Array
 
 def Mat_extractROS(MultiArrMsg): # Extracts numpy array from ROS MultiArray type  (for 2D Arrays)
     temp=np.array(MultiArrMsg.data)
-    temp.reshape((MultiArrMsg.layout.dim[0],MultiArrMsg.layout.dim[1]))
+    temp=temp.reshape((MultiArrMsg.layout.dim[0].size,MultiArrMsg.layout.dim[1].size))
     return temp
         
 
@@ -40,9 +41,11 @@ class CamObj:
         self.id=[] #ID of object, person=0, bicycle=1, all other veh =2
 class RadarObj:
     def __init__(self):
-        self.stamp=Header().stamp # Gives time in nanoseconds
+        self.header=Header() # Gives time in nanoseconds
         self.vx=[] #Relative Velocity, so have to ADD vehicle velocity.
         self.vy=[]
+        self.vx_comp=[]
+        self.vy_comp=[]
         self.pose=Pose() # Also relative distances from ego frame
 
 
