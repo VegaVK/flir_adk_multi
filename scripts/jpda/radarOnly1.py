@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import rospy
 import numpy as np
 import sys
@@ -14,7 +14,6 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import Header
 from darknet_ros_msgs.msg import BoundingBoxes
 from nuscenes2bag.msg import RadarObjects
-sys.path.append(".")
 from utils import Mat_buildROS
 from utils import Mat_extractROS
 from flir_adk_multi.msg import trackArray
@@ -46,18 +45,21 @@ class jpda_class:
         self.Vt=[]
         self.psi=[]
         self.psiD=[]# psiDot
-        
+        rospy.Subscriber('/cam_front/raw', Image, self.buildImage)
         rospy.Subscriber('/vel', Twist, self.Odom1) 
         rospy.Subscriber('/odom', Odometry, self.Odom2) 
         rospy.Subscriber('/imu', Imu, self.Odom3) 
-        rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
+        # rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
+        
         rospy.Subscriber('/radar_front', RadarObjects, self.RdrMsrmtsNuSc)
-        rospy.Subscriber('/cam_front/raw', Image, self.trackPlotter)
+        
         # rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsMKZ)
         #TODO: if-else switches for trackInitiator, trackDestructor, and Kalman functions for radar and camera
         
         # self.nearestNAlg()
         # self.JPDAalg()
+    def buildImage(self,data):
+        self.image=self.bridge.imgmsg_to_cv2(data, "bgr8")
 
     def Odom1(self,data):
         self.Vt =data.linear.x 
@@ -123,6 +125,7 @@ class jpda_class:
 
             else: # Start of algorithm, no tracks
                 self.CurrentTracks=trackArray()
+                print('Initiated CurrentTracks')
                 self.InitiatedTracks=trackArray()
                 for idx in range(len(SensorData)):
                     self.InitiatedTracks.tracks.append(track1())
@@ -154,37 +157,39 @@ class jpda_class:
             self.CurrentTracks=self.KalmanEstimate(SensorData,SensorIndices) # Includes DataAssociation Calcs
             self.CurrentTracks=self.KalmanPropagate(SensorData)
             self.TrackPub.publish(self.CurrentTracks)
-            rospy.loginfo_once('Current tracks published to topic /dataAssoc')
+            rospy.loginfo('Current tracks published to topic /dataAssoc')
             
 
-    def trackPlotter(self,data):
-        RawImage=self.bridge.imgmsg_to_cv2(data, "bgr8")
+    def trackPlotter(self):
+       
         n=len(self.CurrentTracks.tracks)
         RadarAnglesH=np.zeros((n,1))
         RadarAnglesV=np.zeros((n,1))
         # Camera Coordinates: X is horizontal, Y is vertical starting from left top corner
+        CirClr=[]
         for idx in range(n):
             RadarAnglesH[idx]=-np.degrees(np.arctan(np.divide(self.CurrentTracks.tracks[idx].y,self.CurrentTracks.tracks[idx].x)))
             RadarAnglesV[idx]=np.abs(np.degrees(np.arctan(np.divide(1,self.CurrentTracks.tracks[idx].x)))) #will always be negative, so correct for it
             if self.CurrentTracks.tracks[idx].Stat==1: #Current Track
-                CirClr[idx]=np.array([0,255,0])
+                CirClr.append(np.array([0,255,0]))
             elif self.CurrentTracks.tracks[idx].Stat<=0: # Candidate Tracks for initialization
-                CirClr[idx]=np.array([255,0,0])
+                CirClr.append(np.array([255,0,0]))
             else: # Candidate for Destructor
-                CirClr[idx]=np.array([0,0,255])
-        CameraX=self.RadarAnglesH*(RawImage.shape[1]/70) + RawImage.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
-        CameraY=self.RadarAnglesV*(RawImage.shape[0]/39.375) +450 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+                CirClr.append(np.array([0,0,255]))
+        CameraX=RadarAnglesH*(self.image.shape[1]/70) + self.image.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+        CameraY=RadarAnglesV*(self.image.shape[0]/39.375) +450 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
         for idx in range(len(RadarAnglesH)):
-            if (CameraX[idx]<=RawImage.shape[1]):
-                RawImage=cv2.circle(RawImage, (int(CameraX[idx]),int(CameraY[idx])), 3, touple(CirClr[idx]))
-        self.image_pub.publish(self.bridge.cv2_to_imgmsg(RawImage, "bgr8"))
-        rospy.loginfo_once('Image is being published')
+            if (CameraX[idx]<=self.image.shape[1]):
+                self.image=cv2.circle(self.image, (int(CameraX[idx]),int(CameraY[idx])), 3, CirClr[idx].tolist())
+        self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.image, "bgr8"))
+        rospy.loginfo('Image is being published')
 
 
     def trackManager(self,SensorData):
         self.trackInitiator(SensorData)
         self.trackMaintenance(SensorData)
         self.trackDestructor(SensorData)
+        self.trackPlotter()
         
 
                 
@@ -195,26 +200,26 @@ class jpda_class:
             pass
         elif Method=="Greedy": # Simple method that just outputs the closest UNUSED measurement
             usedSensorIndices=[]
-            Yk=np.empty((len(self.CurrentTracks.tracks),1))
+            Yk=[]
             for idx in range(len(self.CurrentTracks.tracks)):
                 gateValX=[]
                 gateValY=[]
                 gateValRMS=[]
                 if (len(SensorIndices[idx])==0):
+                    Yk.append([])
                     continue
                 else:
                     for jdx in range(len(SensorIndices[idx])):
-                        print(len(np.array([SensorIndices[jdx]]).flatten().astype(int))==0)
+                        # print(len(np.array([SensorIndices[jdx]]).flatten().astype(int))==0)
                         gateValX.append(np.abs(SensorData[np.array([SensorIndices[idx][jdx]]).flatten().astype(int)][0].pose.x-self.CurrentTracks.tracks[idx].x))
                         gateValY.append(np.abs(SensorData[np.array([SensorIndices[idx][jdx]]).flatten().astype(int)][0].pose.y-self.CurrentTracks.tracks[idx].y))
                         gateValRMS.append(np.sqrt(gateValX[jdx]**2+gateValY[jdx]**2))
-                    sensIdx=np.argmin(gateValRMS)
+                    sensIdx=int(np.argmin(gateValRMS))
                     while sensIdx in usedSensorIndices:
                         np.delete(gateValRMS,sensIdx)
-                        sensIdx=np.argmin(gateValRMS)
+                        sensIdx=int(np.argmin(gateValRMS))
                     usedSensorIndices.append(sensIdx)
-                    print(sensIdx)
-                    Yk[idx]=SensorData[sensIdx]
+                    Yk.append(SensorData[sensIdx])
         return Yk # An Array with same len as CurrentTracks.tracks[]
 
     def KalmanPropagate(self,SensorData):
