@@ -24,36 +24,41 @@ from std_msgs.msg import Float32MultiArray
 from std_msgs.msg import MultiArrayDimension
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
+from itertools import permutations
 def main():
-    rospy.init_node('jpda', anonymous=True)
+    
     fusInst=jpda_class()
-    try:
-        rospy.spin()
-    except KeyboardInterrupt:
-        print("Shutting down")
-class jpda_class:
+
+class jpda_class():
 
     def __init__(self):
         self.TrackPub=rospy.Publisher("dataAssoc",trackArray, queue_size=1000) 
         self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=1000) 
+        rospy.init_node('Jpda', anonymous=False)
         self.YoloClassList=[0,1,2,3,5,7]
-        self.GateThresh =2 # Scaling factor, threshold for gating
+        self.GateThresh =1 # Scaling factor, threshold for gating
+        self.trackInitThresh=0.5 # For track initiation
         self.bridge=CvBridge()
+        self.image=[] # Initialized
         # Initializing parameters:
         self.Q_rdr=np.array([[1,0,0,0],[0,1,0,0],[0,0,0.1,0],[0,0,0,0.1]])
         self.R_rdr=np.array([[1,0,0],[0,1,0],[0,0,0]])
         self.Vt=[]
         self.psi=[]
         self.psiD=[]# psiDot
-        rospy.Subscriber('/cam_front/raw', Image, self.buildImage)
-        rospy.Subscriber('/vel', Twist, self.Odom1) 
-        rospy.Subscriber('/odom', Odometry, self.Odom2) 
-        rospy.Subscriber('/imu', Imu, self.Odom3) 
-        # rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
-        
-        rospy.Subscriber('/radar_front', RadarObjects, self.RdrMsrmtsNuSc)
-        
-        # rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsMKZ)
+        r = rospy.Rate(0.1) # 10hz
+        while not rospy.is_shutdown():
+            rospy.Subscriber('/cam_front/raw', Image, self.buildImage)
+            rospy.Subscriber('/vel', Twist, self.Odom1) 
+            rospy.Subscriber('/odom', Odometry, self.Odom2) 
+            rospy.Subscriber('/imu', Imu, self.Odom3) 
+            
+            # rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
+            rospy.Subscriber('/radar_front', RadarObjects, self.RdrMsrmtsNuSc)
+            print('once1')
+            print('once3')
+            r.sleep()
+            # rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsMKZ)
         #TODO: if-else switches for trackInitiator, trackDestructor, and Kalman functions for radar and camera
         
         # self.nearestNAlg()
@@ -88,8 +93,8 @@ class jpda_class:
                     for jdx in range(len(SensorData)):
                         gateValX.append(np.abs(SensorData[jdx].pose.x-self.InitiatedTracks.tracks[idx].x))
                         gateValY.append(np.abs(SensorData[jdx].pose.y-self.InitiatedTracks.tracks[idx].y))
-                        gateValRMS.append(np.sqrt(gateValX[jdx]**2+gateValY[jdx]**2))
-                    if (np.min(gateValRMS)<=0.5): # @50Hz, 20m/s in X dir and 10m/s in Y-Direction as validation gate
+                        gateValRMS.append(np.sqrt((gateValX[jdx])**2+(gateValY[jdx])**2))
+                    if (np.min(np.array(gateValRMS))<=self.trackInitThresh): # @50Hz, 20m/s in X dir and 10m/s in Y-Direction as validation gate
                         #If gate is satisfied, move to CurrentTracks after initiating P
                         self.InitiatedTracks.tracks[idx].P=Mat_buildROS(np.array([[1,0,0,0],[0,1,0,0],[0,0,0.5,0],[0,0,0,2]]))
                         #(Large uncertainity given to Beta. Others conservatively picked based on Delphi ESR spec sheet)
@@ -109,19 +114,19 @@ class jpda_class:
                         Hk=np.array([[1,0,0,0],[x/posNorm,y/posNorm,0,0],[H31,H32,H33,H34]])
                         self.InitiatedTracks.tracks[idx].H=Mat_buildROS(Hk)
                         self.CurrentTracks.header=self.InitiatedTracks.header
-                        self.CurrentTracks.tracks.append(self.InitiatedTracks.tracks[idx])
+                        self.CurrentTracks.tracks=np.append(self.CurrentTracks.tracks,self.InitiatedTracks.tracks[idx])
                         #Build Arrays for deletion:
-                        toDel.append([idx])
+                        toDel.append(idx)
                         #Also Delete the corresponding SensorData value:
                         np.delete(SensorData,np.argmin(gateValRMS))
                     else: # none of the SensorData is close to InitiatedTracks[idx], so delete it
-                        toDel.append([idx])
+                        toDel.append(idx)
                 # Clean all InitiatedTracks with status 1
                 np.delete(self.InitiatedTracks.tracks,toDel)
-                # Then append remaining sensor Data for future initation
+                # Then concatenate remaining sensor Data for future initation
                 self.InitiatedTracks.header=SensorData[0].header
                 for idx in range(len(SensorData)):
-                    self.InitiatedTracks.tracks.append(track1())
+                    self.InitiatedTracks.tracks=np.append(self.InitiatedTracks.tracks,track1())
                     self.InitiatedTracks.tracks[-1].Stat= -1 # InitiatedTrack
                     self.InitiatedTracks.tracks[-1].x=SensorData[idx].pose.x
                     self.InitiatedTracks.tracks[-1].y=SensorData[idx].pose.y
@@ -133,7 +138,7 @@ class jpda_class:
                 self.InitiatedTracks=trackArray()
                 self.InitiatedTracks.header=SensorData[0].header
                 for idx in range(len(SensorData)):
-                    self.InitiatedTracks.tracks.append(track1())
+                    self.InitiatedTracks.tracks=np.append(self.InitiatedTracks.tracks,track1())
                     self.InitiatedTracks.tracks[-1].Stat= -1 # InitiatedTrack
                     self.InitiatedTracks.tracks[-1].x=SensorData[idx].pose.x
                     self.InitiatedTracks.tracks[-1].y=SensorData[idx].pose.y
@@ -148,7 +153,7 @@ class jpda_class:
             toDel=[]
             for idx in range(len(self.CurrentTracks.tracks)):
                 if self.CurrentTracks.tracks[idx].Stat>=14: # If no measurements associated for 5 steps
-                    toDel.append([idx])
+                    toDel.append(idx)
             np.delete(self.CurrentTracks.tracks,toDel)
 
     def trackMaintenance(self,SensorData):
@@ -157,17 +162,17 @@ class jpda_class:
         elif isinstance(SensorData[0],RadarObj):
             SensorIndices=[]
             for idx in range(len(self.CurrentTracks.tracks)):
-                SensorIndices.append(self.ValidationGate(SensorData,self.CurrentTracks.tracks[idx]))#Clean the incoming data
+                SensorIndices.append(self.ValidationGate(SensorData,self.CurrentTracks.tracks[idx]))#Clean the incoming data - outputs 2D python array
                 # Above yields array of possible measurments (only indices) corresponding to a particular track
-            self.CurrentTracks=self.KalmanEstimate(SensorData,SensorIndices) # Includes DataAssociation Calcs
-            self.CurrentTracks=self.KalmanPropagate(SensorData)
-            print(self.CurrentTracks)
+            self.KalmanEstimate(SensorData,SensorIndices) # Includes DataAssociation Calcs
+            self.KalmanPropagate(SensorData)
             self.TrackPub.publish(self.CurrentTracks)
             rospy.loginfo('Current tracks published to topic /dataAssoc')
             
 
     def trackPlotter(self):
-       
+        if len(self.image)==0:
+           return # Skip function call if image is not available
         n=len(self.CurrentTracks.tracks)
         RadarAnglesH=np.zeros((n,1))
         RadarAnglesV=np.zeros((n,1))
@@ -177,11 +182,11 @@ class jpda_class:
             RadarAnglesH[idx]=-np.degrees(np.arctan(np.divide(self.CurrentTracks.tracks[idx].y,self.CurrentTracks.tracks[idx].x)))
             RadarAnglesV[idx]=np.abs(np.degrees(np.arctan(np.divide(1,self.CurrentTracks.tracks[idx].x)))) #will always be negative, so correct for it
             if self.CurrentTracks.tracks[idx].Stat==1: #Current Track
-                CirClr.append(np.array([0,255,0]))
+                CirClr=np.append(CirClr,np.array([0,255,0]))
             elif self.CurrentTracks.tracks[idx].Stat<=0: # Candidate Tracks for initialization
-                CirClr.append(np.array([255,0,0]))
+                CirClr=np.append(CirClr,np.array([255,0,0]))
             else: # Candidate for Destructor
-                CirClr.append(np.array([0,0,255]))
+                CirClr=np.append(CirClr,np.array([0,0,255]))
         CameraX=RadarAnglesH*(self.image.shape[1]/70) + self.image.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
         CameraY=RadarAnglesV*(self.image.shape[0]/39.375) +450 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
         for idx in range(len(RadarAnglesH)):
@@ -203,90 +208,99 @@ class jpda_class:
         if Method=="Hungarian":
             pass
         elif Method=="JPDA":
-            pass
+            #Build A Validation Matrix if there are sufficient sensor data and tracks
+            if (len(SensorData)<1) or (len(self.CurrentTracks.tracks)<1):
+                Yk=[]
+            else:
+                ValidationMat=np.zeros((len(SensorData),len(self.CurrentTracks.tracks)+1),dtype=float)
+                ValidationMat[:,0]=np.ones((len(SensorData),1))[:,0]
+                # for idx in range(len(SensorData)): #Rows
+                #     for jdx in range(len(SensorIndices[idx])):
+                #         ValidationMat[idx][jdx+1]=1
+                # Now select different permutations:
+                seedList=np.append(np.zeros((1,len(SensorData)-1)),1)
+                l=list(permutations(seedList.tolist())) ## TODO: PREVENT THIS FROM CRASHING THE CODE!!
+                L=np.array(l).T
+                
         elif Method=="Greedy": # Simple method that just outputs the closest UNUSED measurement
+            # Sensor indices is a 2D python list, not numpy array
             usedSensorIndices=[]
-            Yk=[]
+            Yk=[] # A python list of sensor measurements corresponding to each CurrentTrack
             for idx in range(len(self.CurrentTracks.tracks)):
-                gateValX=np.array([])
-                gateValY=np.array([])
-                gateValRMS=np.array([])
-                if (len(SensorIndices[idx])==0):
+                gateValX=[]
+                gateValY=[]
+                gateValRMS=[]
+                # print(not(SensorIndices[idx]))
+                if len(SensorIndices[idx])==0:
                     Yk.append([])
                     continue
                 else:
                     for jdx in range(len(SensorIndices[idx])):
-                        # print(len(np.array([SensorIndices[jdx]]).flatten().astype(int))==0)
-                        np.append(gateValX,np.abs(SensorData[np.array([SensorIndices[idx][jdx]]).flatten().astype(int)][0].pose.x-self.CurrentTracks.tracks[idx].x))
-                        np.append(gateValY,np.abs(SensorData[np.array([SensorIndices[idx][jdx]]).flatten().astype(int)][0].pose.y-self.CurrentTracks.tracks[idx].y))
-                        if len(gateValY)>0:
-                            np.append(gateValRMS,np.sqrt(gateValX[jdx]**2+gateValY[jdx]**2))
-                    if len(gateValRMS)==0:
-                        continue
-                    else:
-                        sensIdx=int(np.argmin(gateValRMS))
+                        gateValX.append(np.abs(SensorData[SensorIndices[idx][jdx]].pose.x-self.CurrentTracks.tracks[idx].x))
+                        gateValY.append(np.abs(SensorData[SensorIndices[idx][jdx]].pose.y-self.CurrentTracks.tracks[idx].y))
+                        gateValRMS.append(np.sqrt((gateValX[jdx])**2+(gateValY[jdx])**2))
+                    sensIdx=int(np.argmin(np.array(gateValRMS)))
+                    temp=SensorData[sensIdx]
                     while sensIdx in usedSensorIndices:
                         np.delete(gateValRMS,sensIdx)
                         if len(gateValRMS)==0:
+                            temp=[]
                             break
-                        sensIdx=(np.argmin(gateValRMS))
+                        sensIdx=int(np.argmin(np.array(gateValRMS)))
+                        temp=SensorData[sensIdx]
                         # print('sensIdx:')
                         # print(sensIdx)
                     usedSensorIndices.append(sensIdx)
-                    Yk.append(SensorData[sensIdx])
+                    Yk.append(temp)
         return Yk # An Array with same len as CurrentTracks.tracks[]
 
     def KalmanPropagate(self,SensorData):
         delT=(SensorData[0].header.stamp-self.CurrentTracks.header.stamp) 
         delT=delT.to_sec()
         if isinstance(SensorData[0],CamObj): 
-            PropagatedTracks=self.CurrentTracks
-            for idx in range(len(PropagatedTracks.tracks)):
-                PropagatedTracks.tracks[idx].pose.x=PropagatedTracks.tracks[idx].twist.linear.x*delT
-                PropagatedTracks.tracks[idx].pose.y=PropagatedTracks.tracks[idx].twist.linear.y*delT
+            for idx in range(len(self.CurrentTracks.tracks)):
+                self.CurrentTracks.tracks[idx].pose.x=self.CurrentTracks.tracks[idx].twist.linear.x*delT
+                self.CurrentTracks.tracks[idx].pose.y=self.CurrentTracks.tracks[idx].twist.linear.y*delT
         elif isinstance(SensorData[0],RadarObj):
-            PropagatedTracks=self.CurrentTracks
-            for idx in range(len(PropagatedTracks.tracks)):
-                x=PropagatedTracks.tracks[idx].x
-                y=PropagatedTracks.tracks[idx].y
-                Vc=PropagatedTracks.tracks[idx].Vc
-                Beta=PropagatedTracks.tracks[idx].B
+            for idx in range(len(self.CurrentTracks.tracks)):
+                x=self.CurrentTracks.tracks[idx].x
+                y=self.CurrentTracks.tracks[idx].y
+                Vc=self.CurrentTracks.tracks[idx].Vc
+                Beta=self.CurrentTracks.tracks[idx].B
                 psi=self.psi
                 psiD=self.psiD
                 Vt=self.Vt
                 F14=-delT*Vc*np.cos(psi-Beta)
                 F24=delT*Vc*np.sin(psi-Beta)
                 Fk=np.array([[1,delT*psiD,delT*np.sin(psi-Beta),F14],[-delT*psiD,1,delT*np.cos(psi-Beta),F24],[0,0,1,0],[0,0,0,1]])
-                PropagatedTracks.tracks[idx].F=Mat_buildROS(Fk)
-                PropagatedTracks.tracks[idx].P=Mat_buildROS(Fk*Mat_extractROS(PropagatedTracks.tracks[idx].P)*Fk.T+self.Q_rdr*(delT**2)/0.01)
-                StateVec=np.array([PropagatedTracks.tracks[idx].x, PropagatedTracks.tracks[idx].y,PropagatedTracks.tracks[idx].Vc,PropagatedTracks.tracks[idx].B])
+                self.CurrentTracks.tracks[idx].F=Mat_buildROS(Fk)
+                self.CurrentTracks.tracks[idx].P=Mat_buildROS(Fk*Mat_extractROS(self.CurrentTracks.tracks[idx].P)*Fk.T+self.Q_rdr*(delT**2)/0.01)
+                StateVec=np.array([self.CurrentTracks.tracks[idx].x, self.CurrentTracks.tracks[idx].y,self.CurrentTracks.tracks[idx].Vc,self.CurrentTracks.tracks[idx].B])
                 A=np.array([[0,psiD,np.sin(psi-Beta),0],[-psiD,0,0,np.cos(psi-Beta)],[0,0,0,0],[0,0,0,0]])
                 StateVec=StateVec.reshape(4,1)+delT*(A.dot(StateVec.reshape(4,1))+np.array([[0],[Vt],[0],[0]]))
-                PropagatedTracks.tracks[idx].x=StateVec[0]
-                PropagatedTracks.tracks[idx].y=StateVec[1]
-                PropagatedTracks.tracks[idx].Vc=StateVec[2]
-                PropagatedTracks.tracks[idx].B=StateVec[3]
-        return PropagatedTracks
+                self.CurrentTracks.tracks[idx].x=StateVec[0]
+                self.CurrentTracks.tracks[idx].y=StateVec[1]
+                self.CurrentTracks.tracks[idx].Vc=StateVec[2]
+                self.CurrentTracks.tracks[idx].B=StateVec[3]
 
 
     def KalmanEstimate(self,SensorData,SensorIndices):
         if isinstance(SensorData[0],CamObj): 
             pass
         elif isinstance(SensorData[0],RadarObj): # Use EKF from Truck Platooning paper:
-            EstimatedTracks=self.CurrentTracks
             Yk=self.DataAssociation(SensorData,SensorIndices,'Greedy') # Lists suitable measurements for each track
             for idx in range(len(Yk)):
                 if len(Yk[idx])==0: # No suitable measurements found, move to potential destruct
-                    if  EstimatedTracks.tracks[idx].Stat>=10:
-                         EstimatedTracks.tracks[idx].Stat+=1
+                    if  self.CurrentTracks.tracks[idx].Stat>=10:
+                         self.CurrentTracks.tracks[idx].Stat+=1
                     else:
-                        EstimatedTracks.tracks[idx].Stat=10
+                        self.CurrentTracks.tracks[idx].Stat=10
                     continue
                 else:
-                    x=EstimatedTracks.tracks[idx].x
-                    y=EstimatedTracks.tracks[idx].y
-                    Vc=EstimatedTracks.tracks[idx].Vc
-                    Beta=EstimatedTracks.tracks[idx].B
+                    x=self.CurrentTracks.tracks[idx].x
+                    y=self.CurrentTracks.tracks[idx].y
+                    Vc=self.CurrentTracks.tracks[idx].Vc
+                    Beta=self.CurrentTracks.tracks[idx].B
                     psi=self.psi
                     psiD=self.psiD
                     Vt=self.Vt
@@ -296,19 +310,18 @@ class jpda_class:
                     H33=x*np.sin(psi-Beta)/posNorm+y*np.cos(psi-Beta)/posNorm
                     H34=(-x*Vc*np.cos(psi-Beta)+y*Vc*np.sin(psi-Beta))/posNorm
                     Hk=np.array([[1,0,0,0],[x/posNorm,y/posNorm,0,0],[H31,H32,H33,H34]])
-                    EstimatedTracks.tracks[idx].H=Mat_buildROS(Hk)
-                    Pk=Mat_extractROS(EstimatedTracks.tracks[idx].P)
+                    self.CurrentTracks.tracks[idx].H=Mat_buildROS(Hk)
+                    Pk=Mat_extractROS(self.CurrentTracks.tracks[idx].P)
                     K=Pk*Hk.T*np.linalg.inv(Hk*P*Hk.T+self.R_rdr)
-                    EstimatedTracks.tracks[idx].K=Mat_buildROS(K)
-                    StateVec=np.array([EstimatedTracks.tracks[idx].x, EstimatedTracks.tracks[idx].y,EstimatedTracks.tracks[idx].Vc,EstimatedTracks.tracks[idx].B])
+                    self.CurrentTracks.tracks[idx].K=Mat_buildROS(K)
+                    StateVec=np.array([self.CurrentTracks.tracks[idx].x, self.CurrentTracks.tracks[idx].y,self.CurrentTracks.tracks[idx].Vc,self.CurrentTracks.tracks[idx].B])
                     StateVec=StateVec+K*(Yk[idx]-Hk*StateVec)
-                    EstimatedTracks.tracks[idx].x=StateVec[0]
-                    EstimatedTracks.tracks[idx].y=StateVec[1]
-                    EstimatedTracks.tracks[idx].Vc=StateVec[2]
-                    EstimatedTracks.tracks[idx].B=StateVec[3]
+                    self.CurrentTracks.tracks[idx].x=StateVec[0]
+                    self.CurrentTracks.tracks[idx].y=StateVec[1]
+                    self.CurrentTracks.tracks[idx].Vc=StateVec[2]
+                    self.CurrentTracks.tracks[idx].B=StateVec[3]
                     Pk=(np.eye(4)-K*Hk)*Pk
-                    EstimatedTracks.tracks[idx].P=Mat_buildROS(Pk)
-        return EstimatedTracks
+                    self.CurrentTracks.tracks[idx].P=Mat_buildROS(Pk)
 
 
 
@@ -331,8 +344,8 @@ class jpda_class:
                 y=np.array([SensorData[jdx].pose.x,rho,rhoDot])
                 Temp=((y.reshape(3,1)-y_est).T.dot(SkInv)).dot(y.reshape(3,1)-y_est)
                 if (Temp[0]<=self.GateThresh**2):
-                    SensorIdxOut.append([jdx])
-        return SensorIdxOut
+                    SensorIdxOut.append(jdx)
+        return SensorIdxOut # returns a python list, not numpy array
 
     def CamMsrmts(self,data):
         self.CamReadings=[]
@@ -340,7 +353,7 @@ class jpda_class:
         # for idx in range(len(data.bounding_boxes)):
         #     #print(data.bounding_boxes[2].id)
         #     if data.bounding_boxes[idx].id in self.YoloClassList:
-        #         self.CamReadings.append(CamObj())
+        #         self.CamReadings.concatenate(CamObj())
         #         self.CamReadings[-1].stamp=data.header.stamp
         #         self.CamReadings[-1].PxWidth=(data.bounding_boxes[idx].xmax-data.bounding_boxes[idx].xmin)
         #         self.CamReadings[-1].PxHeight=(data.bounding_boxes[idx].ymax-data.bounding_boxes[idx].ymin)
@@ -348,16 +361,17 @@ class jpda_class:
         #self.trackManager(self.CamReadings)
         # for elem in self.TempReadings:
         #     if elem:
-        #         self.CamReadings.append(elem)
+        #         self.CamReadings.concatenate(elem)
         #print(len(self.CamReadings))
     #TODO: create new RdrMsrmtsMKZ to work with MKZ.
 
     def RdrMsrmtsNuSc(self,data): 
         #Build SensorData
+        print('RdrCallback')
         self.RdrReadings=[]
         
         for idx in range(len(data.objects)):
-            self.RdrReadings.append(RadarObj())
+            self.RdrReadings=np.append(self.RdrReadings,RadarObj())
             self.RdrReadings[-1].pose=data.objects[idx].pose
             self.RdrReadings[-1].vx=data.objects[idx].vx
             self.RdrReadings[-1].vy=data.objects[idx].vy
