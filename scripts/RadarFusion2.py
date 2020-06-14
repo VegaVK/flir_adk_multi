@@ -4,8 +4,7 @@ import rospy
 import numpy as np
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
-from math import *
-import dbw_mkz_msgs.msg
+import math
 from sensor_msgs.msg import Image
 from delphi_esr_msgs.msg import EsrEthTx
 from radar_msgs.msg import RadarTrackArray
@@ -31,9 +30,12 @@ class radar_img:
         # Caliberation: Roughly measured in car.
         self.delta_x = 2.3114
         self.delta_y = 0 # Assuming that the radar and camera are on same centerline
-        self.delta_z = 1.0414
+        self.delta_z = 1.0414/2
         self.H_FOV=50
         self.V_FOV=41 #Calculated based on aspect ratio
+        self.HorzOffset=-30 # Manual horizontal (Y-direction) offset for radar in pixels
+        self.VertOffset=-10 # Manual vertical (Z-direction) offset for radar in pixels
+        #-self.RadarTracks[idx]['RadarX']*np.sin(np.radians(4)) 
         rospy.loginfo('Published fused image')
         # rospy.Subscriber('vehicle/steering_report', dbw_mkz_msgs.msg.SteeringReport, self.VehSpeedCallback)
         # rospy.Subscriber("/as_tx/objects",ObjectWithCovarianceArray, self.radarObj)
@@ -81,7 +83,7 @@ class radar_img:
         
 
     def fusefun(self):
-    	imageTemp = self.RawImage
+        imageTemp = self.RawImage
         n=len(self.RadarTracks)
         self.RadarAnglesH=np.zeros((n,1))
         self.RadarAnglesV=np.zeros((n,1))
@@ -89,8 +91,8 @@ class radar_img:
         for idx in range(n):
             self.RadarAnglesH[idx]=-np.degrees(np.arctan(np.divide(self.RadarTracks[idx]['RadarY'],self.RadarTracks[idx]['RadarX'])))
             self.RadarAnglesV[idx]=np.abs(np.degrees(np.arctan(np.divide(self.RadarTracks[idx]['RadarZ'],self.RadarTracks[idx]['RadarX'])))) #will always be negative, so correct for it
-        self.CameraX=self.RadarAnglesH*(self.RawImage.shape[1]/self.H_FOV) + self.RawImage.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
-        self.CameraY=self.RadarAnglesV*(self.RawImage.shape[0]/self.V_FOV) +256 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+        self.CameraX=self.RadarAnglesH*(self.RawImage.shape[1]/self.H_FOV) + self.RawImage.shape[1]/2 +self.HorzOffset# Number of pixels per degree,adjusted for shifting origin from centerline to top left
+        self.CameraY=self.RadarAnglesV*(self.RawImage.shape[0]/self.V_FOV) +256 +self.VertOffset -self.RadarTracks[idx]['RadarX']*np.sin(np.radians(4)) # Number of pixels per degree,adjusted for shifting origin from centerline to top left
         
 
         for idx in range(len(self.RadarAnglesH)):

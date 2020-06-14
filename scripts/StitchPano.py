@@ -20,22 +20,27 @@ class vid_stitch:
         self.bridge=CvBridge()
         self.PanoPub = rospy.Publisher("Thermal_Panorama",Image,queue_size=100)
         self.TempWarpPub=rospy.Publisher("Warp1_2",Image,queue_size=100)
-        self.overlapPix12=180
-        self.overlapPix23=160
-        self.overlapPix34=200
-        self.overlapPix45=200 # Guess, needs to be tuned
+        self.overlapPix12=190#180,160,200,200,
+        self.overlapPix23=187
+        self.overlapPix34=215
+        self.overlapPix45=220 # Guess, needs to be tuned
+        self.image1Stat=[]
+        self.image2Stat=[]
+        self.image3Stat=[]
+        self.image4Stat=[]
+        self.image5Stat=[]
         
-        self.smoothingPix=1# Number of pixels to smooth over
+        self.smoothingPix=10# Number of pixels to smooth over
         # Create gradient arrays for Left and Right
         self.gradientArrLeft=np.linspace(1.0,0.0, self.smoothingPix, endpoint=True)
         self.gradientArrLeft=np.tile(self.gradientArrLeft,(512,1))
         self.gradientArrRight=np.linspace(0.0,1.0, self.smoothingPix, endpoint=True)
         self.gradientArrRight=np.tile(self.gradientArrRight,(512,1))
 
-        self.homographyMat1_2=np.array([[1,0,0],[0,1,-1],[0.00024,0.00,0.853]])
-        self.homographyMat2_3=np.array([[1,0,0],[0,1,-5],[0.00012,0.00,0.83]])
-        self.homographyMat3_4=np.array([[1,0,0],[0,1,0],[-0.00036,0.00,1]])
-        self.homographyMat4_5=np.array([[1,0,0],[0,1,0],[-0.00024,0.00,1]]) # Guess, needs to be tuned
+        self.homographyMat1_2=np.array([[1,0,0],[0,1,0],[0.00015,0.00,0.92]])
+        self.homographyMat2_3=np.array([[1,0,0],[0,1,0],[0.00006,0.00,0.94]])
+        self.homographyMat3_4=np.array([[1,0,0],[0,1,0],[-0.00012,0.00,1]])
+        self.homographyMat4_5=np.array([[1,0,0],[0,1,0],[-0.00021,0.00,1]]) # Guess, needs to be tuned
         
         rospy.Subscriber('/flir_boson1/image_rect', Image, self.buildimage1)
         rospy.Subscriber('/flir_boson2/image_rect', Image, self.buildimage2)
@@ -46,19 +51,23 @@ class vid_stitch:
     
     def buildimage1(self,data):
         self.image1=self.bridge.imgmsg_to_cv2(data, "mono8")
-    
+        # self.image1Stat=1
+
     def buildimage2(self,data):
         self.image2=self.bridge.imgmsg_to_cv2(data, "mono8")
-    
+        # self.image2Stat=1
+
     def buildimage3(self,data):
         self.image3=self.bridge.imgmsg_to_cv2(data, "mono8")
-    
+        # self.image3Stat=1
+
     def buildimage4(self,data):
         self.image4=self.bridge.imgmsg_to_cv2(data, "mono8")
-        
+        # self.image4Stat=1
         
     def buildimage5(self,data):
         self.image5=self.bridge.imgmsg_to_cv2(data, "mono8")
+        # self.image5Stat=1
         self.stitchfun() # Put this in the LAST buildimage() callback 
    
     def stitchfun(self):
@@ -82,10 +91,15 @@ class vid_stitch:
         #print(self.Panorama.shape)
         self.Panorama=cv2.cvtColor(self.Panorama,cv2.COLOR_GRAY2RGB)                
         # Publishers
+        self.image1Stat=0
+        self.image2Stat=0
+        self.image3Stat=0
+        self.image4Stat=0
+        self.image5Stat=0
         self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "rgb8"))
         self.TempWarpPub.publish(self.bridge.cv2_to_imgmsg(self.Warped1_2, "mono8"))
         rospy.loginfo('Published Panorama')
-        
+
         
          
 
