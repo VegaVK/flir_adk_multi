@@ -25,7 +25,7 @@ class radar_img:
 
     def __init__(self):
         self.bridge=CvBridge()
-        self.image_pub = rospy.Publisher("fused_image",Image,queue_size=100)
+        self.image_pub = rospy.Publisher("radar_image",Image,queue_size=100)
         self.image1=np.array([1])
         # Caliberation: Roughly measured in car.
         self.delta_x = 2.3114
@@ -103,7 +103,7 @@ class radar_img:
         imageTemp=cv2.cvtColor(imageTemp,cv2.COLOR_GRAY2RGB)
         for idx in range(len(self.RadarAnglesH)):
             if (self.CameraX[idx]<=self.RawImage.shape[1]):
-                cv2.circle(imageTemp, (int(self.CameraX[idx]),int(self.CameraY[idx])), 3, (255,105,180))
+                cv2.circle(imageTemp, (int(self.CameraX[idx]),int(self.CameraY[idx])), 10, (255,105,180),3)
 
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(imageTemp, "rgb8"))
 
