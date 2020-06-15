@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+  <include file="$(find flir_adk_multi)/launch/launchAllCams.launch"/>
+  <include file="$(find dbw_mkz_can)/launch/dbw.launch"/>
+  <include file="$(find delphi_esr)/launch/delphi_esr_car.launch"/>
+
+
+<!-- Panorama Stitching -->
+  <node name="Panorama" pkg="flir_adk_multi" type="StitchPano.py" output="screen"></node>
+</launch>

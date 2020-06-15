@@ -7,7 +7,7 @@ from sensor_msgs.msg import Image
 import numpy as np
 
 def main():
-    rospy.init_node('Some_publisher', anonymous=True)
+    rospy.init_node('Panorama', anonymous=True)
     vsInst=vid_stitch()
     try:
         rospy.spin()
@@ -97,7 +97,7 @@ class vid_stitch:
         self.image4Stat=0
         self.image5Stat=0
         self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "rgb8"))
-        self.TempWarpPub.publish(self.bridge.cv2_to_imgmsg(self.Warped1_2, "mono8"))
+        # self.TempWarpPub.publish(self.bridge.cv2_to_imgmsg(self.Warped1_2, "mono8"))
         rospy.loginfo('Published Panorama')
 
         

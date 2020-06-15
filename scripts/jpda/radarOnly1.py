@@ -3,13 +3,15 @@ import rospy
 import numpy as np
 import sys
 import os
-# import dbw_mkz_msgs.msg
+from dbw_mkz_msgs.msg import SteeringReport
 from sensor_msgs.msg import Image
+from derived_object_msgs.msg import ObjectWithCovarianceArray
 # from delphi_esr_msgs.msg import EsrEthTx
 from std_msgs.msg import String
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import TwistStamped
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Header
 from darknet_ros_msgs.msg import BoundingBoxes
@@ -20,67 +22,87 @@ from flir_adk_multi.msg import trackArray
 from flir_adk_multi.msg import track1
 from utils import CamObj
 from utils import RadarObj
+from utils import RadarObjMKZ
 from std_msgs.msg import Float32MultiArray
 from std_msgs.msg import MultiArrayDimension
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 from itertools import permutations
 def main():
-    
-    fusInst=jpda_class()
-
+    rospy.init_node('jpda', anonymous=True)
+    inputArg=sys.argv[1]
+    print(inputArg)
+    fusInst=jpda_class(inputArg)
+    try:
+        rospy.spin()
+    except KeyboardInterrupt:
+        print("Shutting down")
 class jpda_class():
 
-    def __init__(self):
-        self.TrackPub=rospy.Publisher("dataAssoc",trackArray, queue_size=1000) 
+    def __init__(self,inputArg):
+        self.TrackPub=rospy.Publisher("dataAssoc",trackArray) 
         self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=1000) 
-        rospy.init_node('Jpda', anonymous=False)
         self.YoloClassList=[0,1,2,3,5,7]
-        self.GateThresh =1 # Scaling factor, threshold for gating
+        self.GateThresh =0.5 # Scaling factor, threshold for gating
         self.trackInitThresh=0.5 # For track initiation
         self.bridge=CvBridge()
         self.image=[] # Initialized
         # Initializing parameters:
         self.Q_rdr=np.array([[1,0,0,0],[0,1,0,0],[0,0,0.1,0],[0,0,0,0.1]])
-        self.R_rdr=np.array([[1,0,0],[0,1,0],[0,0,0]])
+        self.R_rdr=np.array([[1.1,0,0],[0,1.1,0],[0,0,0]])
         self.Vt=[]
+        self.velY=[]
+        self.velX=[]
         self.psi=[]
         self.psiD=[]# psiDot
-        r = rospy.Rate(0.1) # 10hz
-        while not rospy.is_shutdown():
+        if inputArg=="NuSc":
             rospy.Subscriber('/cam_front/raw', Image, self.buildImage)
-            rospy.Subscriber('/vel', Twist, self.Odom1) 
-            rospy.Subscriber('/odom', Odometry, self.Odom2) 
-            rospy.Subscriber('/imu', Imu, self.Odom3) 
-            
-            # rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
-            rospy.Subscriber('/radar_front', RadarObjects, self.RdrMsrmtsNuSc)
-            print('once1')
-            print('once3')
-            r.sleep()
-            # rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsMKZ)
+            rospy.Subscriber('/vel', Twist, self.Odom1NuSc) 
+            rospy.Subscriber('/odom', Odometry, self.Odom2NuSc) 
+            rospy.Subscriber('/imu', Imu, self.Odom3NuSc)
+            rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsNuSc)
+        elif inputArg=="MKZ":
+            rospy.Subscriber('/Thermal_Panorama', Image, self.buildImage)
+            rospy.Subscriber('/vehicle/steering_report', SteeringReport, self.Odom1MKZ) 
+            rospy.Subscriber('/vehicle/gps/vel', TwistStamped, self.Odom2MKZ) # TODO: fix after IMU is available
+            rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
+            rospy.Subscriber('/as_tx/objects', ObjectWithCovarianceArray, self.RdrMsrmtsMKZ)
+        # rospy.Subscriber('/as_tx/objects')
+        # rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
+        # rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsMKZ)
         #TODO: if-else switches for trackInitiator, trackDestructor, and Kalman functions for radar and camera
         
         # self.nearestNAlg()
         # self.JPDAalg()
     def buildImage(self,data):
         # print('gotImage')
-        self.image=self.bridge.imgmsg_to_cv2(data, "bgr8")
+        self.image=self.bridge.imgmsg_to_cv2(data, "rgb8")
 
-    def Odom1(self,data):
+    def Odom1NuSc(self,data):
         self.Vt =data.linear.x 
-        # print(self.Vt)
-    def Odom2(self,data):
+    def Odom2NuSc(self,data):
         self.psi=data.pose.pose.orientation.z
-    def Odom3(self,data):
+    def Odom3NuSc(self,data):
         self.psiD=data.angular_velocity.z
-        # print(self.psiD)
+    def Odom1MKZ(self,data):
+        self.Vt=data.speed
+    def Odom2MKZ(self,data):
+        self.psi=np.arctan2(data.twist.linear.y,data.twist.linear.x)
+        self.velX=data.twist.linear.x
+        self.velY=data.twist.linear.y
+        # print(self.psi)
+    def Odom3MKZ(self,data):
+        self.psiD=data.twist.angular.z
+
+
+
 
 
     def trackInitiator(self,SensorData):
         if isinstance(SensorData[0],CamObj): 
             pass
-        elif isinstance(SensorData[0],RadarObj):
+        elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
+            
             if hasattr(self, 'CurrentTracks'):# Some (or Zer0) tracks already exists (i.e, not start of algorithm)
                 # Move to current tracks based on NN-style gating
                 toDel=[]
@@ -91,8 +113,8 @@ class jpda_class():
                     gateValRMS=[]
                     # Find all sensor objects within some gate
                     for jdx in range(len(SensorData)):
-                        gateValX.append(np.abs(SensorData[jdx].pose.x-self.InitiatedTracks.tracks[idx].x))
-                        gateValY.append(np.abs(SensorData[jdx].pose.y-self.InitiatedTracks.tracks[idx].y))
+                        gateValX.append(np.abs(SensorData[jdx].pose.position.x-self.InitiatedTracks.tracks[idx].x))
+                        gateValY.append(np.abs(SensorData[jdx].pose.position.y-self.InitiatedTracks.tracks[idx].y))
                         gateValRMS.append(np.sqrt((gateValX[jdx])**2+(gateValY[jdx])**2))
                     if (np.min(np.array(gateValRMS))<=self.trackInitThresh): # @50Hz, 20m/s in X dir and 10m/s in Y-Direction as validation gate
                         #If gate is satisfied, move to CurrentTracks after initiating P
@@ -118,30 +140,31 @@ class jpda_class():
                         #Build Arrays for deletion:
                         toDel.append(idx)
                         #Also Delete the corresponding SensorData value:
-                        np.delete(SensorData,np.argmin(gateValRMS))
+                        SensorData=np.delete(SensorData,np.argmin(gateValRMS))
                     else: # none of the SensorData is close to InitiatedTracks[idx], so delete it
                         toDel.append(idx)
                 # Clean all InitiatedTracks with status 1
-                np.delete(self.InitiatedTracks.tracks,toDel)
+                self.InitiatedTracks.tracks=np.delete(self.InitiatedTracks.tracks,toDel)
                 # Then concatenate remaining sensor Data for future initation
                 self.InitiatedTracks.header=SensorData[0].header
                 for idx in range(len(SensorData)):
                     self.InitiatedTracks.tracks=np.append(self.InitiatedTracks.tracks,track1())
                     self.InitiatedTracks.tracks[-1].Stat= -1 # InitiatedTrack
-                    self.InitiatedTracks.tracks[-1].x=SensorData[idx].pose.x
-                    self.InitiatedTracks.tracks[-1].y=SensorData[idx].pose.y
+                    self.InitiatedTracks.tracks[-1].x=SensorData[idx].pose.position.x
+                    self.InitiatedTracks.tracks[-1].y=SensorData[idx].pose.position.y
                     self.InitiatedTracks.tracks[-1].Vc=np.sqrt(SensorData[idx].vx_comp**2+SensorData[idx].vy_comp**2)
                     self.InitiatedTracks.tracks[-1].B=self.psi # TODO: Have better estimate for Beta during intialization
 
             else: # Start of algorithm, no tracks
                 self.CurrentTracks=trackArray()
+                print('createdCurrentTracks')
                 self.InitiatedTracks=trackArray()
                 self.InitiatedTracks.header=SensorData[0].header
                 for idx in range(len(SensorData)):
                     self.InitiatedTracks.tracks=np.append(self.InitiatedTracks.tracks,track1())
                     self.InitiatedTracks.tracks[-1].Stat= -1 # InitiatedTrack
-                    self.InitiatedTracks.tracks[-1].x=SensorData[idx].pose.x
-                    self.InitiatedTracks.tracks[-1].y=SensorData[idx].pose.y
+                    self.InitiatedTracks.tracks[-1].x=SensorData[idx].pose.position.x
+                    self.InitiatedTracks.tracks[-1].y=SensorData[idx].pose.position.y
                     self.InitiatedTracks.tracks[-1].Vc=np.sqrt(SensorData[idx].vx_comp**2+SensorData[idx].vy_comp**2)
                     self.InitiatedTracks.tracks[-1].B=self.psi # TODO: Have better estimate for Beta during intialization
                 
@@ -149,24 +172,26 @@ class jpda_class():
     def trackDestructor(self,SensorData):
         if isinstance(SensorData[0],CamObj): 
             pass
-        elif isinstance(SensorData[0],RadarObj):
+        elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
             toDel=[]
             for idx in range(len(self.CurrentTracks.tracks)):
                 if self.CurrentTracks.tracks[idx].Stat>=14: # If no measurements associated for 5 steps
                     toDel.append(idx)
-            np.delete(self.CurrentTracks.tracks,toDel)
+            self.CurrentTracks.tracks=np.delete(self.CurrentTracks.tracks,toDel)
 
     def trackMaintenance(self,SensorData):
         if isinstance(SensorData[0],CamObj): 
             pass
-        elif isinstance(SensorData[0],RadarObj):
+        elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
             SensorIndices=[]
             for idx in range(len(self.CurrentTracks.tracks)):
                 SensorIndices.append(self.ValidationGate(SensorData,self.CurrentTracks.tracks[idx]))#Clean the incoming data - outputs 2D python array
                 # Above yields array of possible measurments (only indices) corresponding to a particular track
             self.KalmanEstimate(SensorData,SensorIndices) # Includes DataAssociation Calcs
+            print('done KEST')
             self.KalmanPropagate(SensorData)
-            self.TrackPub.publish(self.CurrentTracks)
+            print(len(self.CurrentTracks.tracks))
+            self.TrackPub.publish(tracks =self.CurrentTracks.tracks)
             rospy.loginfo('Current tracks published to topic /dataAssoc')
             
 
@@ -192,14 +217,17 @@ class jpda_class():
         for idx in range(len(RadarAnglesH)):
             if (CameraX[idx]<=self.image.shape[1]):
                 self.image=cv2.circle(self.image, (int(CameraX[idx]),int(CameraY[idx])), 3, CirClr[idx].tolist())
-        self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.image, "bgr8"))
+        self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.image, "rgb8"))
         rospy.loginfo('Image is being published')
 
 
     def trackManager(self,SensorData):
         self.trackInitiator(SensorData)
+        print('done TrackInit')
         self.trackMaintenance(SensorData)
+        print('doneTrackMaint')
         self.trackDestructor(SensorData)
+        print('done TrackDestr')
         self.trackPlotter()
         
 
@@ -226,7 +254,11 @@ class jpda_class():
             # Sensor indices is a 2D python list, not numpy array
             usedSensorIndices=[]
             Yk=[] # A python list of sensor measurements corresponding to each CurrentTrack
+            print('len of CurrentTracks.tracks: ')
+            print(len(self.CurrentTracks.tracks))
             for idx in range(len(self.CurrentTracks.tracks)):
+                print('dataAssoc Yk idx:')
+                print(idx)
                 gateValX=[]
                 gateValY=[]
                 gateValRMS=[]
@@ -236,15 +268,22 @@ class jpda_class():
                     continue
                 else:
                     for jdx in range(len(SensorIndices[idx])):
-                        gateValX.append(np.abs(SensorData[SensorIndices[idx][jdx]].pose.x-self.CurrentTracks.tracks[idx].x))
-                        gateValY.append(np.abs(SensorData[SensorIndices[idx][jdx]].pose.y-self.CurrentTracks.tracks[idx].y))
+                        gateValX.append(np.abs(SensorData[SensorIndices[idx][jdx]].pose.position.x-self.CurrentTracks.tracks[idx].x))
+                        gateValY.append(np.abs(SensorData[SensorIndices[idx][jdx]].pose.position.y-self.CurrentTracks.tracks[idx].y))
                         gateValRMS.append(np.sqrt((gateValX[jdx])**2+(gateValY[jdx])**2))
                     sensIdx=int(np.argmin(np.array(gateValRMS)))
+                    gateValRMS=np.array(gateValRMS)
                     temp=SensorData[sensIdx]
                     while sensIdx in usedSensorIndices:
-                        np.delete(gateValRMS,sensIdx)
+                        print('while sensIdx and usedSensorIndices and gateValRSM:')
+                        print(sensIdx)
+                        print(usedSensorIndices)
+                        print(gateValRMS)
+                        gateValRMS=np.delete(gateValRMS,sensIdx)
+                        print(gateValRMS)
                         if len(gateValRMS)==0:
                             temp=[]
+                            print('going to break')
                             break
                         sensIdx=int(np.argmin(np.array(gateValRMS)))
                         temp=SensorData[sensIdx]
@@ -253,6 +292,7 @@ class jpda_class():
                     usedSensorIndices.append(sensIdx)
                     Yk.append(temp)
         return Yk # An Array with same len as CurrentTracks.tracks[]
+        done('dataAssoc')
 
     def KalmanPropagate(self,SensorData):
         delT=(SensorData[0].header.stamp-self.CurrentTracks.header.stamp) 
@@ -261,7 +301,7 @@ class jpda_class():
             for idx in range(len(self.CurrentTracks.tracks)):
                 self.CurrentTracks.tracks[idx].pose.x=self.CurrentTracks.tracks[idx].twist.linear.x*delT
                 self.CurrentTracks.tracks[idx].pose.y=self.CurrentTracks.tracks[idx].twist.linear.y*delT
-        elif isinstance(SensorData[0],RadarObj):
+        elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
             for idx in range(len(self.CurrentTracks.tracks)):
                 x=self.CurrentTracks.tracks[idx].x
                 y=self.CurrentTracks.tracks[idx].y
@@ -285,12 +325,17 @@ class jpda_class():
 
 
     def KalmanEstimate(self,SensorData,SensorIndices):
+        print('reached KEST')
         if isinstance(SensorData[0],CamObj): 
             pass
-        elif isinstance(SensorData[0],RadarObj): # Use EKF from Truck Platooning paper:
+        elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ): # Use EKF from Truck Platooning paper:
+            print('reached KEST2')
             Yk=self.DataAssociation(SensorData,SensorIndices,'Greedy') # Lists suitable measurements for each track
+            print('done dataAssoc KEST')
             for idx in range(len(Yk)):
-                if len(Yk[idx])==0: # No suitable measurements found, move to potential destruct
+                print('Yk Idx:')
+                print(idx)
+                if not Yk[idx]: # No suitable measurements found, move to potential destruct
                     if  self.CurrentTracks.tracks[idx].Stat>=10:
                          self.CurrentTracks.tracks[idx].Stat+=1
                     else:
@@ -312,15 +357,25 @@ class jpda_class():
                     Hk=np.array([[1,0,0,0],[x/posNorm,y/posNorm,0,0],[H31,H32,H33,H34]])
                     self.CurrentTracks.tracks[idx].H=Mat_buildROS(Hk)
                     Pk=Mat_extractROS(self.CurrentTracks.tracks[idx].P)
-                    K=Pk*Hk.T*np.linalg.inv(Hk*P*Hk.T+self.R_rdr)
+                    K=np.dot(np.dot(Pk,Hk.T),np.linalg.inv(np.dot(np.dot(Hk,Pk),Hk.T)+self.R_rdr))
                     self.CurrentTracks.tracks[idx].K=Mat_buildROS(K)
-                    StateVec=np.array([self.CurrentTracks.tracks[idx].x, self.CurrentTracks.tracks[idx].y,self.CurrentTracks.tracks[idx].Vc,self.CurrentTracks.tracks[idx].B])
-                    StateVec=StateVec+K*(Yk[idx]-Hk*StateVec)
+                    StateVec=np.array([self.CurrentTracks.tracks[idx].x, self.CurrentTracks.tracks[idx].y,self.CurrentTracks.tracks[idx].Vc,self.CurrentTracks.tracks[idx].B]).T
+                    print(Yk[idx])
+                    rho=np.sqrt(Yk[idx].pose.position.x**2+Yk[idx].pose.position.y**2)
+                    rhoDot=(Yk[idx].pose.position.x*np.sin(self.psi-Beta)*Vc+Yk[idx].pose.position.y*np.cos(self.psi-Beta)*Vc)/rho
+                    YkdataAssocStateVec=np.array([Yk[idx].pose.position.x,rho,rhoDot]).T
+                    StateVec=StateVec.reshape([4,1])
+                    YkdataAssocStateVec=YkdataAssocStateVec.reshape([3,1])
+                    print(np.matmul(Hk,StateVec).shape)
+                    print(YkdataAssocStateVec.shape)
+                    print(K.shape)
+                    print(YkdataAssocStateVec.shape)
+                    StateVec=StateVec+np.matmul(K,(YkdataAssocStateVec-np.matmul(Hk,StateVec)))
                     self.CurrentTracks.tracks[idx].x=StateVec[0]
                     self.CurrentTracks.tracks[idx].y=StateVec[1]
                     self.CurrentTracks.tracks[idx].Vc=StateVec[2]
                     self.CurrentTracks.tracks[idx].B=StateVec[3]
-                    Pk=(np.eye(4)-K*Hk)*Pk
+                    Pk=np.dot((np.eye(4)-np.dot(K,Hk)),Pk)
                     self.CurrentTracks.tracks[idx].P=Mat_buildROS(Pk)
 
 
@@ -329,19 +384,25 @@ class jpda_class():
         SensorIdxOut=[]
         if isinstance(SensorData[0],CamObj): #
             pass
-        if isinstance(SensorData[0],RadarObj):
+        if isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
             StateVec=np.array([track.x, track.y,track.Vc,track.B])
             Hk=Mat_extractROS(track.H)
             y_est=np.dot(Hk.reshape(3,4),StateVec.reshape(4,1))
             Pk=Mat_extractROS(track.P)
-            SkInv=np.linalg.inv((Hk.dot(Pk)).dot(Hk.T)+self.R_rdr)
+            # print('SkInv:')
+            # print(np.dot(np.dot(Hk,Pk),Hk.T)+self.R_rdr)
+            SkInv=np.linalg.inv(np.dot(np.dot(Hk,Pk),Hk.T)+self.R_rdr)
+
             # TODO: Edit for Delphi ESR
             for jdx in range(len(SensorData)):
                 Vc=np.sqrt((self.Vt+SensorData[jdx].vx)**2+SensorData[jdx].vy**2)
-                Beta=  SensorData[jdx].vy_comp/SensorData[jdx].vx_comp# This will be Vx/Vy for delphi esr
-                rho=np.sqrt(SensorData[jdx].pose.x**2+SensorData[jdx].pose.y**2)
-                rhoDot=(SensorData[jdx].pose.x*np.sin(self.psi-Beta)*Vc+SensorData[jdx].pose.y*np.cos(self.psi-Beta)*Vc)/rho
-                y=np.array([SensorData[jdx].pose.x,rho,rhoDot])
+                if SensorData[jdx].vy==0.0:
+                    Beta=0
+                else:
+                    Beta=  SensorData[jdx].vx/SensorData[jdx].vy# This will be Vx/Vy for delphi esr
+                rho=np.sqrt(SensorData[jdx].pose.position.x**2+SensorData[jdx].pose.position.y**2)
+                rhoDot=(SensorData[jdx].pose.position.x*np.sin(self.psi-Beta)*Vc+SensorData[jdx].pose.position.y*np.cos(self.psi-Beta)*Vc)/rho
+                y=np.array([SensorData[jdx].pose.position.x,rho,rhoDot])
                 Temp=((y.reshape(3,1)-y_est).T.dot(SkInv)).dot(y.reshape(3,1)-y_est)
                 if (Temp[0]<=self.GateThresh**2):
                     SensorIdxOut.append(jdx)
@@ -382,7 +443,24 @@ class jpda_class():
         #print(self.RdrReadings[3].stamp)
         self.RdrReadings=np.asarray(self.RdrReadings)
         self.trackManager(self.RdrReadings)
+
+    def RdrMsrmtsMKZ(self,data): 
+        #Build SensorData
+        print('RdrCallback')
+        self.RdrReadings=[]
         
+        for idx in range(len(data.objects)):
+            self.RdrReadings=np.append(self.RdrReadings,RadarObjMKZ())
+            self.RdrReadings[-1].pose=data.objects[idx].pose.pose
+            self.RdrReadings[-1].vx=data.objects[idx].twist.twist.linear.x
+            self.RdrReadings[-1].vy=data.objects[idx].twist.twist.linear.y
+            self.RdrReadings[-1].vx_comp=self.velX+data.objects[idx].twist.twist.linear.x
+            self.RdrReadings[-1].vy_comp=self.velY+data.objects[idx].twist.twist.linear.y
+            self.RdrReadings[-1].header=data.objects[idx].header
+            
+        #print(self.RdrReadings[3].stamp)
+        self.RdrReadings=np.asarray(self.RdrReadings)
+        self.trackManager(self.RdrReadings)
 
 
 if __name__=='__main__':
