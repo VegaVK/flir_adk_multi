@@ -31,15 +31,16 @@ class radar_img:
         self.delta_x = 2.3114
         self.delta_y = 0 # Assuming that the radar and camera are on same centerline
         self.delta_z = 1.0414/2
-        self.H_FOV=50
+        self.font=cv2.FONT_HERSHEY_SIMPLEX 
+        self.H_FOV=190
         self.V_FOV=41 #Calculated based on aspect ratio
-        self.HorzOffset=-30 # Manual horizontal (Y-direction) offset for radar in pixels
+        self.HorzOffset=0 # Manual horizontal (Y-direction) offset for radar in pixels
         self.VertOffset=-10 # Manual vertical (Z-direction) offset for radar in pixels
         #-self.RadarTracks[idx]['RadarX']*np.sin(np.radians(4)) 
         rospy.loginfo('Published fused image')
         # rospy.Subscriber('vehicle/steering_report', dbw_mkz_msgs.msg.SteeringReport, self.VehSpeedCallback)
         # rospy.Subscriber("/as_tx/objects",ObjectWithCovarianceArray, self.radarObj)
-        rospy.Subscriber('/flir_boson3/image_rect', Image, self.image)
+        rospy.Subscriber('/Thermal_Panorama', Image, self.image)
         rospy.Subscriber("/as_tx/radar_tracks/",RadarTrackArray, self.radarTracks)
         
 
@@ -95,15 +96,14 @@ class radar_img:
         self.CameraY=self.RadarAnglesV*(self.RawImage.shape[0]/self.V_FOV) +256 +self.VertOffset -self.RadarTracks[idx]['RadarX']*np.sin(np.radians(4)) # Number of pixels per degree,adjusted for shifting origin from centerline to top left
         
 
-        for idx in range(len(self.RadarAnglesH)):
-            if (self.CameraX[idx]<=self.RawImage.shape[1]):
-                cv2.circle(imageTemp, (int(self.CameraX[idx]),int(self.CameraY[idx])), 3, (255,105,180))
 
         
         imageTemp=cv2.cvtColor(imageTemp,cv2.COLOR_GRAY2RGB)
         for idx in range(len(self.RadarAnglesH)):
             if (self.CameraX[idx]<=self.RawImage.shape[1]):
                 cv2.circle(imageTemp, (int(self.CameraX[idx]),int(self.CameraY[idx])), 10, (255,105,180),3)
+                # print(str(self.RadarTracks[idx]['id'][0]))
+                cv2.putText(imageTemp,str(self.RadarTracks[idx]['id'][0]),(self.CameraX[idx],self.CameraY[idx]),self.font,1,(255,105,180),2)
 
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(imageTemp, "rgb8"))
 

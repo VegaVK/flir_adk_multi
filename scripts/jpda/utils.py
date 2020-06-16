@@ -49,6 +49,7 @@ class RadarObj:
         self.pose=Pose() # Also relative distances from ego frame
 class RadarObjMKZ:
     def __init__(self):
+        self.id=[]
         self.header=Header() # Gives time in nanoseconds
         self.vx=[] #Relative Velocity, so have to ADD vehicle velocity.
         self.vy=[]
