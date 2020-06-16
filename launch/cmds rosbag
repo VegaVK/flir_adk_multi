@@ -1,0 +1,3 @@
+/flir_boson5
+
+ rosbag record -a -x "(.*)image_raw(.*)|(.*)boson_camera(.*)|(.*)theora(.*)|(.*)camera_info(.*)|(.*)image_rect/compressed(.*)|(.*)can_tx(.*)|(.*)can_rx(.*)|(.*)/diagnostics(.*)|(.*)/camera/camera(.*)|(.*)/camera/image_mono(.*)|(.*)/camera/image_raw(.*)|(.*)/camera/image_color/theora(.*)|(.*)/camera/image_color|(.*)/camera/image_color/compressed/p(.*)|(.*)/camera/image_color/compressedD(.*)|(.*)/camera/image|(.*)/camera/image_proc(.*)" 

@@ -2,9 +2,9 @@
 <!-- V4L Serial numbers need to be changed if required in 'dev'-->
 <launch>
 <!-- VidMode can be YUV or RAW16, will be passed to all cameras-->
-<arg name="vidMode" default="RAW16"/>
+<arg name="vidMode" default="YUV"/>
 <!-- Frame Rate for all cameras-->
-<arg name="frameRate" default="9.0"/>
+<arg name="frameRate" default="15.0"/>
   <include file="$(find flir_adk_multi)/launch/flir_boson.launch">
       <arg name="dev" default="/dev/v4l/by-id/usb-FLIR_Boson_36087-video-index0"/>
       <arg name="video_mode" value="$(arg vidMode)"/>

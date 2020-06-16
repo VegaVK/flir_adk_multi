@@ -3,6 +3,7 @@
   <include file="$(find flir_adk_multi)/launch/launchAllCams.launch"/>
   <include file="$(find dbw_mkz_can)/launch/dbw.launch"/>
   <include file="$(find delphi_esr)/launch/delphi_esr_car.launch"/>
+  <include file="$(find pointgrey_camera_driver)/launch/camera.launch"/>
 
 
 <!-- Panorama Stitching -->
