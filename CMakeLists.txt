@@ -22,7 +22,9 @@ find_package(OpenCV REQUIRED)
 add_message_files(
   FILES
   track1.msg
-  trackArray.msg
+  trackArray1.msg
+  track2.msg
+  trackArray2.msg
 )
 
 generate_messages(

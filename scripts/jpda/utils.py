@@ -37,8 +37,13 @@ class CamObj:
         self.stamp= Header().stamp # Gives time in nanoseconds
         self.PxWidth=[]
         self.PxHeight=[]
-        self.Position=Pose().position # To be calculated later, if req
+        self.XPix=[] # Location of the center of the box
+        self.YPix=[]
+        # self.Area=[] 
+        # self.Ratio=[]
+        # self.Position=Pose().position # To be calculated later, if req
         self.id=[] #ID of object, person=0, bicycle=1, all other veh =2
+        self.confidence=[] # Probability of detection
 class RadarObj:
     def __init__(self):
         self.header=Header() # Gives time in nanoseconds
