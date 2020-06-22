@@ -19,7 +19,7 @@ class vid_stitch:
     def __init__(self):
         self.bridge=CvBridge()
         self.PanoPub = rospy.Publisher("Thermal_Panorama",Image,queue_size=100)
-        self.TempWarpPub=rospy.Publisher("Warp1_2",Image,queue_size=100)
+        # self.TempWarpPub=rospy.Publisher("Warp1_2",Image,queue_size=100)
         self.overlapPix12=190#180,160,200,200,
         self.overlapPix23=187
         self.overlapPix34=215

@@ -21,10 +21,10 @@ find_package(OpenCV REQUIRED)
 
 add_message_files(
   FILES
-  track1.msg
-  trackArray1.msg
-  track2.msg
-  trackArray2.msg
+  trackRdr.msg
+  trackArrayRdr.msg
+  trackCam.msg
+  trackArrayCam.msg
 )
 
 generate_messages(

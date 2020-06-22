@@ -35,10 +35,10 @@ def Mat_extractROS(MultiArrMsg): # Extracts numpy array from ROS MultiArray type
 class CamObj:
     def __init__(self):
         self.stamp= Header().stamp # Gives time in nanoseconds
-        self.PxWidth=[]
-        self.PxHeight=[]
-        self.XPix=[] # Location of the center of the box
-        self.YPix=[]
+        self.xmin=[]
+        self.xmax=[]
+        self.ymin=[] # Location of the center of the box
+        self.ymax=[]
         # self.Area=[] 
         # self.Ratio=[]
         # self.Position=Pose().position # To be calculated later, if req
