@@ -35,10 +35,10 @@ def Mat_extractROS(MultiArrMsg): # Extracts numpy array from ROS MultiArray type
 class CamObj:
     def __init__(self):
         self.stamp= Header().stamp # Gives time in nanoseconds
-        self.xmin=[]
-        self.xmax=[]
-        self.ymin=[] # Location of the center of the box
-        self.ymax=[]
+        self.xmin=0
+        self.xmax=0
+        self.ymin=0 # Location of the center of the box
+        self.ymax=0
         # self.Area=[] 
         # self.Ratio=[]
         # self.Position=Pose().position # To be calculated later, if req
@@ -54,12 +54,12 @@ class RadarObj:
         self.pose=Pose() # Also relative distances from ego frame
 class RadarObjMKZ:
     def __init__(self):
-        self.id=[]
+        self.id=0
         self.header=Header() # Gives time in nanoseconds
-        self.vx=[] #Relative Velocity, so have to ADD vehicle velocity.
-        self.vy=[]
-        self.vx_comp=[]
-        self.vy_comp=[]
+        self.vx=0.0 #Relative Velocity, so have to ADD vehicle velocity.
+        self.vy=0.0
+        self.vx_comp=0.0
+        self.vy_comp=0.0
         self.pose=Pose() # Also relative distances from ego frame
 
 
