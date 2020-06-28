@@ -35,22 +35,23 @@ def main():
     rospy.init_node('jpda', anonymous=True)
     DataSetType=sys.argv[1]
     Method=sys.argv[2]
+    PlotArg=sys.argv[3] # 0-No Plot; 1-Combined; 2-Cam; 3-Rdr; 4-Both Cam&Rdr
     # print(inputArg)
-    fusInst=jpda_class(DataSetType,Method)
+    fusInst=jpda_class(DataSetType,Method,PlotArg)
     try:
         rospy.spin()
     except KeyboardInterrupt:
         print("Shutting down")
 class jpda_class():
 
-    def __init__(self,DataSetType,Method):
+    def __init__(self,DataSetType,Method,PlotArg):
         self.TrackPubRdr=rospy.Publisher("dataAssocRdr",trackArrayRdr, queue_size=100) 
         self.TrackPubCam=rospy.Publisher("dataAssocCam",trackArrayCam, queue_size=100) 
         self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=100) 
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
         self.YoloClassList=[0,1,2] # For Yolov3_flir
-        self.GateThreshRdr =0.5# Scaling factor, threshold for gating
-        self.GateThreshCam=5# TODO: adjust?
+        self.GateThreshRdr =2# Scaling factor, threshold for gating
+        self.GateThreshCam=20# TODO: adjust?
         self.trackInitRdrThresh=0.1 # For track initiation
         self.trackInitCamThresh=3 # Radius of 15 pixels allowed
         self.bridge=CvBridge()
@@ -68,6 +69,7 @@ class jpda_class():
         self.psi=0.0
         self.psiD=0.0# psiDot
         self.Method=Method
+        self.PlotArg=PlotArg
         self.CamXOffset=2.36#=93 inches, measured b/w cam and Rdr, in x direction
         self.CamZoffset=1 # Roughly 40 inches
         if DataSetType=="NuSc":
@@ -82,8 +84,8 @@ class jpda_class():
             rospy.Subscriber('/vehicle/gps/vel', TwistStamped, self.Odom2MKZ) # TODO: fix after IMU is available
             rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
             rospy.Subscriber('/as_tx/objects', ObjectWithCovarianceArray, self.RdrMsrmtsMKZ)
-            # rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
-            rospy.Subscriber('/darknet_ros/bounding_boxes/_drop', BoundingBoxes, self.CamMsrmts)# used for dropped stuff: $rosrun topic_tools drop /darknet_ros/bounding_boxes/ 2 3
+            rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
+            # rospy.Subscriber('/darknet_ros/bounding_boxes/_drop', BoundingBoxes, self.CamMsrmts)# used for dropped stuff: $rosrun topic_tools drop /darknet_ros/bounding_boxes/ 2 3
         # rospy.Subscriber('/as_tx/objects')
         # rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
         # rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsMKZ)
@@ -145,7 +147,8 @@ class jpda_class():
                         # If the Sensor Data is already in validatation gate of any of the currentTracks, skip adding that into InitiatedTracks
                         if self.InitSensorValidator(SensorIndicesInit,jdx):
                             continue 
-                        R.append(np.sqrt((InitiatedCamTracks.tracks[idx].yPx.data-(SensorData[jdx].xmax+SensorData[jdx].xmin)/2)**2 \
+                        else:
+                            R.append(np.sqrt((InitiatedCamTracks.tracks[idx].yPx.data-(SensorData[jdx].xmax+SensorData[jdx].xmin)/2)**2 \
                             +(InitiatedCamTracks.tracks[idx].zPx.data-(SensorData[jdx].ymax+SensorData[jdx].ymin)/2)**2))
                     if len(R)==0:
                         R=9000 #Arbitrarily large value
@@ -173,7 +176,7 @@ class jpda_class():
                         InitiatedCamTracks.tracks[idx].width.data=(SensorData[jdx].xmax-SensorData[jdx].xmin)
                         InitiatedCamTracks.tracks[idx].yPx.data=(SensorData[jdx].xmax+SensorData[jdx].xmin)/2
                         InitiatedCamTracks.tracks[idx].zPx.data=(SensorData[jdx].ymax+SensorData[jdx].ymin)/2
-                        Pk=np.diag([3,3,10,10,3,3,3,3])
+                        Pk=np.diag([10,10,10,10,10,10,10,10]) # Initial covariance matrix
                         InitiatedCamTracks.tracks[idx].P=Mat_buildROS(Pk)
                         self.CurrentCamTracks.tracks=np.append(self.CurrentCamTracks.tracks,InitiatedCamTracks.tracks[idx])
                         toDel.append(idx)
@@ -251,7 +254,7 @@ class jpda_class():
                         gateValRMS=1000# Arbitrary large value, greater than trackInitRdrThresh
                     if (np.min(np.array(gateValRMS))<=self.trackInitRdrThresh): # @50Hz, 20m/s in X dir and 10m/s in Y-Direction as validation gate
                         #If gate is satisfied, move to CurrentRdrTracks after initiating P and deleting that SensorData[idx]
-                        self.InitiatedRdrTracks.tracks[idx].P=Mat_buildROS(np.array([[1,0,0,0],[0,1,0,0],[0,0,0.5,0],[0,0,0,2]]))
+                        self.InitiatedRdrTracks.tracks[idx].P=Mat_buildROS(np.array([[2,0,0,0],[0,2,0,0],[0,0,1,0],[0,0,0,1]]))
                         #(Large uncertainity given to Beta. Others conservatively picked based on Delphi ESR spec sheet)
                         self.InitiatedRdrTracks.tracks[idx].Stat.data=1# Moving to CurrentRdrTracks
                         x=self.InitiatedRdrTracks.tracks[idx].x.data
@@ -352,7 +355,7 @@ class jpda_class():
             self.KalmanEstimate(SensorData,SensorIndices, self.Method) # Includes DataAssociation Calcs
             self.KalmanPropagate(SensorData)
             self.TrackPubRdr.publish(header=self.CurrentRdrTracks.header, tracks =self.CurrentRdrTracks.tracks)
-            # rospy.loginfo('Current tracks published to topic /dataAssoc')
+            rospy.loginfo_once('Current tracks published to topic /dataAssoc')
 
     def InitSensorValidator(self,SensorIndicesInit,jdx):
         #takes SensorIndices 2 D python array and current Sensor index being checked;
@@ -367,64 +370,68 @@ class jpda_class():
 
 
     def trackPlotter(self):
-        if not (hasattr(self,'image')):
-           return # Skip function call if image is not available
+        if not (hasattr(self,'image')) or (self.PlotArg=='0'):
+           return # Skip function call if image is not available or plotting is disabled
         if (not hasattr(self, 'CurrentRdrTracks')) or (not hasattr(self,'CurrentCamTracks')):
             return # Skip if either of current tracks are zero
-        
-        CurrentRdrTracks=self.CurrentRdrTracks
-        n=len(CurrentRdrTracks.tracks)
-        CurrentCamTracks=self.CurrentCamTracks
-        RadarAnglesH=np.zeros((n,1))
-        RadarAnglesV=np.zeros((n,1))
-        # Camera Coordinates: X is horizontal, Y is vertical starting from left top corner
-        CirClr=[]
         LocalImage=self.image
+        print(type(self.PlotArg))
+        if (self.PlotArg=='3') or (self.PlotArg=='4'): # Then, plot Radar stuff
+            CurrentRdrTracks=self.CurrentRdrTracks
+            n=len(CurrentRdrTracks.tracks)
+            RadarAnglesH=np.zeros((n,1))
+            RadarAnglesV=np.zeros((n,1))
+            # Camera Coordinates: X is horizontal, Y is vertical starting from left top corner
+            CirClr=[]
+            for idx1 in range(len(CurrentRdrTracks.tracks)):
+                temp1=np.divide(CurrentRdrTracks.tracks[idx1].y.data,CurrentRdrTracks.tracks[idx1].x.data)
+                RadarAnglesH[idx1]=-np.degrees(np.arctan(temp1.astype(float)))
+                temp2=np.divide(self.CamZoffset,CurrentRdrTracks.tracks[idx1].x.data+self.CamXOffset)
+                RadarAnglesV[idx1]=np.abs(np.degrees(np.arctan(temp2.astype(float)))) #will always be negative, so correct for it
+                if (CurrentRdrTracks.tracks[idx1].Stat.data>=1) and (CurrentRdrTracks.tracks[idx1].Stat.data<14): #Current Track- green
+                    CirClr.append(np.array([0,255,0]))
+                elif CurrentRdrTracks.tracks[idx1].Stat.data<=0: # Candidate Tracks for initialization - blue
+                    CirClr.append(np.array([255,0,0]))
+                else: # Candidate for Destructor-orange
+                    CirClr.append(np.array([0,165,255])) 
+            CameraX=np.dot(RadarAnglesH,(self.image.shape[1]/190)) + self.image.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+            CameraY=np.dot(RadarAnglesV,(self.image.shape[0]/39.375)) +512/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+            CirClr=np.array(CirClr)
+            CameraX=np.array(CameraX)
+            for idx3 in range(len(CameraX)):
+                if (CameraX[idx3]<=self.image.shape[1]):
+                    LocalImage=cv2.circle(LocalImage, (int(CameraX[idx3]),int(CameraY[idx3])), 12, CirClr[idx3].tolist(),3)
+                    LocalImage=cv2.putText(LocalImage,str(idx3),(int(CameraX[idx3]),int(CameraY[idx3])),self.font,1,(255,105,180),2)
         
-        for idx1 in range(len(CurrentRdrTracks.tracks)):
-            temp1=np.divide(CurrentRdrTracks.tracks[idx1].y.data,CurrentRdrTracks.tracks[idx1].x.data)
-            RadarAnglesH[idx1]=-np.degrees(np.arctan(temp1.astype(float)))
-            temp2=np.divide(self.CamZoffset,CurrentRdrTracks.tracks[idx1].x.data+self.CamXOffset)
-            RadarAnglesV[idx1]=np.abs(np.degrees(np.arctan(temp2.astype(float)))) #will always be negative, so correct for it
-            if (CurrentRdrTracks.tracks[idx1].Stat.data>=1) and (CurrentRdrTracks.tracks[idx1].Stat.data<14): #Current Track- green
-                CirClr.append(np.array([0,255,0]))
-            elif CurrentRdrTracks.tracks[idx1].Stat.data<=0: # Candidate Tracks for initialization - blue
-                CirClr.append(np.array([255,0,0]))
-            else: # Candidate for Destructor-orange
-                CirClr.append(np.array([0,165,255])) 
-        CameraX=np.dot(RadarAnglesH,(self.image.shape[1]/190)) + self.image.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
-        CameraY=np.dot(RadarAnglesV,(self.image.shape[0]/39.375)) +512/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
-        CirClr=np.array(CirClr)
-        CameraX=np.array(CameraX)
-
-        for idx3 in range(len(CameraX)):
-            if (CameraX[idx3]<=self.image.shape[1]):
-                LocalImage=cv2.circle(LocalImage, (int(CameraX[idx3]),int(CameraY[idx3])), 12, CirClr[idx3].tolist(),3)
-                LocalImage=cv2.putText(LocalImage,str(idx3),(int(CameraX[idx3]),int(CameraY[idx3])),self.font,1,(255,105,180),2)
+        #Now Plot Camera Trakcs:
+        if (self.PlotArg=='2') or (self.PlotArg=='4'): # Then, plot Cam stuff
+            CurrentCamTracks=self.CurrentCamTracks
+            RectClr=[]
+            for jdx in range(len(CurrentCamTracks.tracks)):
+                if (CurrentCamTracks.tracks[jdx].Stat.data>=1) and (CurrentCamTracks.tracks[jdx].Stat.data<14): #Current Track- green
+                    RectClr.append(np.array([0,255,0]))
+                elif CurrentCamTracks.tracks[jdx].Stat.data<=0: # Candidate Tracks for initialization - blue
+                    RectClr.append(np.array([255,0,0]))
+                else: # Candidate for Destructor-orange
+                    RectClr.append(np.array([0,165,255])) 
+            for idx2 in range(len(CurrentCamTracks.tracks)):
+                start=(int(CurrentCamTracks.tracks[idx2].yPx.data-CurrentCamTracks.tracks[idx2].width.data/2),int(CurrentCamTracks.tracks[idx2].zPx.data-CurrentCamTracks.tracks[idx2].height.data/2))
+                end= (int(CurrentCamTracks.tracks[idx2].yPx.data+CurrentCamTracks.tracks[idx2].width.data/2),int(CurrentCamTracks.tracks[idx2].zPx.data+CurrentCamTracks.tracks[idx2].height.data/2))
+                LocalImage=cv2.rectangle(LocalImage,start,end,RectClr[idx2].tolist(),2)
         
-        #Now set colors for the Camera Tracks and plot them:
-        RectClr=[]
-        for jdx in range(len(CurrentCamTracks.tracks)):
-            if (CurrentCamTracks.tracks[jdx].Stat.data>=1) and (CurrentCamTracks.tracks[jdx].Stat.data<14): #Current Track- green
-                RectClr.append(np.array([0,255,0]))
-            elif CurrentCamTracks.tracks[jdx].Stat.data<=0: # Candidate Tracks for initialization - blue
-                RectClr.append(np.array([255,0,0]))
-            else: # Candidate for Destructor-orange
-                RectClr.append(np.array([0,165,255])) 
-        
-        for idx2 in range(len(CurrentCamTracks.tracks)):
-            start=(int(CurrentCamTracks.tracks[idx2].yPx.data-CurrentCamTracks.tracks[idx2].width.data/2),int(CurrentCamTracks.tracks[idx2].zPx.data-CurrentCamTracks.tracks[idx2].height.data/2))
-            end= (int(CurrentCamTracks.tracks[idx2].yPx.data+CurrentCamTracks.tracks[idx2].width.data/2),int(CurrentCamTracks.tracks[idx2].zPx.data+CurrentCamTracks.tracks[idx2].height.data/2))
-            LocalImage=cv2.rectangle(LocalImage,start,end,RectClr[idx2].tolist(),2)
+        #TODO: Plot Combined track
+        if (self.PlotArg=='1'):
+            pass
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(LocalImage, "bgr8"))
-        rospy.loginfo('Image is being published')
+        rospy.loginfo_once('Image is being published')
    
     def CamRdrCombine(self):
         pass
 
     def trackManager(self,SensorData):
-        self.trackInitiator(SensorData)
+        
         self.trackMaintenance(SensorData)
+        self.trackInitiator(SensorData)
         self.trackDestructor(SensorData)
         self.trackPlotter()
         
