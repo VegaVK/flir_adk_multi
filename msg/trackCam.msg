@@ -9,5 +9,6 @@ std_msgs/Float32 widthDot
 std_msgs/Float32 heightDot
 std_msgs/Float32MultiArray P
 std_msgs/Float32MultiArray K
+float64 confidence
 
 
