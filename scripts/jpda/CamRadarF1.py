@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import rospy
 import numpy as np
 import sys
@@ -7,7 +7,6 @@ import tf
 from dbw_mkz_msgs.msg import SteeringReport
 from sensor_msgs.msg import Image
 from derived_object_msgs.msg import ObjectWithCovarianceArray
-# from delphi_esr_msgs.msg import EsrEthTx
 from std_msgs.msg import String
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import Pose
@@ -32,12 +31,13 @@ from std_msgs.msg import MultiArrayDimension
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 from itertools import permutations
+import time
+
 def main():
     rospy.init_node('jpda', anonymous=True)
     DataSetType=sys.argv[1]
     Method=sys.argv[2]
     PlotArg=sys.argv[3] # 0-No Plot; 1-Combined; 2-Cam; 3-Rdr; 4-Both Cam&Rdr
-    # print(inputArg)
     fusInst=jpda_class(DataSetType,Method,PlotArg)
     try:
         rospy.spin()
@@ -55,7 +55,7 @@ class jpda_class():
         self.GateThreshCam=10# TODO: adjust?
         self.trackInitRdrThresh=0.5 # For track initiation
         self.trackInitCamThresh=3 # Radius of 15 pixels allowed
-        self.CombGateThresh=45# in pixels (added to radius buffer)
+        self.CombGateThresh=20# in pixels (added to radius buffer)
         self.bridge=CvBridge()
         self.font=cv2.FONT_HERSHEY_SIMPLEX 
         # Initializing parameters:
@@ -82,16 +82,19 @@ class jpda_class():
             rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsNuSc)
         elif DataSetType=="MKZ":
             rospy.Subscriber('/Thermal_Panorama', Image, self.buildImage)
-            # rospy.Subscriber('/vehicle/steering_report', SteeringReport, self.Odom1MKZ) # Better than wheel speed report (no need to convert from rad/s)
             rospy.Subscriber('/imu/data', Imu, self.Odom2MKZ) # TODO: fix after IMU is available
             rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
-            rospy.Subscriber('/as_tx/objects', ObjectWithCovarianceArray, self.RdrMsrmtsMKZ, queue_size=1)
-            rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts,queue_size=1)
-            # rospy.Subscriber('/darknet_ros/bounding_boxes/_drop', BoundingBoxes, self.CamMsrmts)# used for dropped stuff: $rosrun topic_tools drop /darknet_ros/bounding_boxes/ 2 3
-        # rospy.Subscriber('/as_tx/objects')
-        # rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes, self.CamMsrmts)
-        # rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsMKZ)
-        
+            while not rospy.is_shutdown():
+                # startTime=time.time()
+                self.RdrMsrmtsMKZ(rospy.wait_for_message('/as_tx/objects', ObjectWithCovarianceArray))
+                # print('TOTAL for RDR:' + str(time.time()-startTime))
+                # startTime=time.time()
+                self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes))
+                # print('TOTAL for CAM:' + str(time.time()-startTime))
+                # startTime=time.time()
+                self.CamRdrCombine()
+                # print('Time Combining:' + str(time.time()-startTime))
+            
         
     def buildImage(self,data):
         if not(hasattr(self,'image')):
@@ -109,7 +112,6 @@ class jpda_class():
         self.Vt=data.speed
     def Odom2MKZ(self,data):
         self.psi=tf.transformations.euler_from_quaternion([data.orientation.x,data.orientation.y,data.orientation.z,data.orientation.w])[2]
-        # print(np.degrees(self.psi))
         # psi above is in radians, with 0 facing due EAST, not north
         
     def Odom3MKZ(self,data):
@@ -312,8 +314,6 @@ class jpda_class():
                     
 
             else: # Start of algorithm, no tracks
-                
-                # print('createdCurrentRdrTracks')
                 self.InitiatedRdrTracks=trackArrayRdr()
                 self.InitiatedRdrTracks.header=SensorData[0].header
                 for idx in range(len(SensorData)):
@@ -426,6 +426,8 @@ class jpda_class():
                 LocalImage=cv2.rectangle(LocalImage,start,end,RectClr[idx2].tolist(),2)
         
         if (self.PlotArg=='1') or (self.PlotArg=='4'): # Only plot self.CombinedTracks
+            if not hasattr(self,'CombinedTracks'):
+                return
             currCombinedTracks=self.CombinedTracks
             RectClr=[]
             for jdx in range(len(currCombinedTracks.tracks)):
@@ -438,40 +440,45 @@ class jpda_class():
         rospy.loginfo_once('Image is being published')
    
     def CamRdrCombine(self):
-        
-        LocalCamTracks=self.CurrentCamTracks
+        if not hasattr(self,'CurrentCamTracks') or (not hasattr(self,'CurrentRdrTracks')):
+            return
         self.CombinedTracks=trackArrayCam()
-        LocalCurrRdrTracks=self.CurrentRdrTracks
-        n=len(LocalCamTracks.tracks)
+        n=len(self.CurrentCamTracks.tracks)
         LocalRdrYArr=[]
-        for rdx in range(len(LocalCurrRdrTracks.tracks)):
-            temp1=np.divide(LocalCurrRdrTracks.tracks[rdx].y.data,LocalCurrRdrTracks.tracks[rdx].x.data)
+        for rdx in range(len(self.CurrentRdrTracks.tracks)):
+            temp1=np.divide(self.CurrentRdrTracks.tracks[rdx].y.data,self.CurrentRdrTracks.tracks[rdx].x.data)
             temp2=-np.degrees(np.arctan(temp1.astype(float)))
             LocalRdrYArr.append(np.dot(temp2,(self.image.shape[1]/190)) + self.image.shape[1]/2) # Gives all Y-coord (pixels)  of all radar tracks 
         for jdx in range(n):
-            radius=(LocalCamTracks.tracks[jdx].width.data+LocalCamTracks.tracks[jdx].height.data)/2+self.CombGateThresh
-            centerY=LocalCamTracks.tracks[jdx].yPx.data
+            radius=(self.CurrentCamTracks.tracks[jdx].width.data+self.CurrentCamTracks.tracks[jdx].height.data)/2+self.CombGateThresh
+            centerY=self.CurrentCamTracks.tracks[jdx].yPx.data
             for Rdx in range(len(LocalRdrYArr)):
-                if (abs(LocalRdrYArr[Rdx]-centerY)<=radius) or (LocalCamTracks.tracks[jdx].confidence>=0.60):
-                    LocalCamTracks.tracks[Rdx].Stat.data=99 #To indicate that the status is combined/validated
+                if (abs(LocalRdrYArr[Rdx]-centerY)<=radius) or (self.CurrentCamTracks.tracks[jdx].confidence>=0.60):
+                    self.CurrentCamTracks.tracks[jdx].Stat.data=99 #To indicate that the status is combined/validated
                     #TODO: Create a custom CombinedTracks Message that has both radar and Camera info?
-                    self.CombinedTracks.tracks.append(LocalCamTracks.tracks[Rdx])
+                    self.CombinedTracks.tracks.append(self.CurrentCamTracks.tracks[jdx])
                     break
                 else:
                     continue
-        
 
     def trackManager(self,SensorData):
-        
+        # startTime=time.time()
         self.trackMaintenance(SensorData)
+        # print('Time for Track Maint:' + str(time.time()-startTime))
+        # startTime=time.time()
         self.trackInitiator(SensorData)
+        # print('Time for Track Init:' + str(time.time()-startTime))
+        # startTime=time.time()
         self.trackDestructor(SensorData)
+        # print('Time for Track Destr:' + str(time.time()-startTime))
+        # startTime=time.time()
         self.trackPlotter()
+        # print('Time for Track Plotter:' + str(time.time()-startTime))
         if hasattr(self,'CurrentCamTracks') and hasattr(self,'CurrentRdrTracks'):
-            s= '# of Cam Tracks: ' + str(len(self.CurrentCamTracks.tracks)) + '; Rdr Tracks ' + str(len(self.CurrentRdrTracks.tracks))
+            s= '# Cam Tracks: ' + str(len(self.CurrentCamTracks.tracks)) + '; Rdr Tracks ' + str(len(self.CurrentRdrTracks.tracks)) +'; # Combined Tracks:'\
+            +( str(len(self.CombinedTracks.tracks)) if hasattr(self,'CombinedTracks') else 'None')
             print(s)
-        self.CamRdrCombine()
-        # print(len(self.CombinedTracks.tracks))
+       
        
         
 
@@ -730,7 +737,6 @@ class jpda_class():
     def CamMsrmts(self,data):
         self.CamReadings=[]
         for idx in range(len(data.bounding_boxes)):
-            #print(data.bounding_boxes[2].id)
             if (data.bounding_boxes[idx].id in self.YoloClassList) and (data.bounding_boxes[idx].probability>0.3): # Only add if confident of detection
                 self.CamReadings=np.append(self.CamReadings,CamObj())
                 self.CamReadings[-1].header=data.header
@@ -775,6 +781,7 @@ class jpda_class():
 
     def RdrMsrmtsMKZ(self,data): 
         #Build SensorData
+        # startTime=time.time()
         self.RdrReadings=[]
         
         for idx in range(len(data.objects)):
@@ -788,8 +795,8 @@ class jpda_class():
             self.RdrReadings[-1].header=data.objects[idx].header
             self.RdrReadings[-1].id=data.objects[idx].id
             
-        #print(self.RdrReadings[3].stamp)
         self.RdrReadings=np.asarray(self.RdrReadings)
+        # print('Time for RdrMsrmts:' + str(time.time()-startTime))
         self.trackManager(self.RdrReadings)
 
 
