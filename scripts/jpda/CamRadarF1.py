@@ -55,7 +55,7 @@ class jpda_class():
         self.GateThreshCam=10# TODO: adjust?
         self.trackInitRdrThresh=0.5 # For track initiation
         self.trackInitCamThresh=3 # Radius of 15 pixels allowed
-        self.CombGateThresh=20# in pixels (added to radius buffer)
+        self.CombGateThresh=15# in pixels (added to radius buffer)
         self.bridge=CvBridge()
         self.font=cv2.FONT_HERSHEY_SIMPLEX 
         # Initializing parameters:
