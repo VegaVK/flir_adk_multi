@@ -474,9 +474,10 @@ class jpda_class():
         # startTime=time.time()
         self.trackPlotter()
         # print('Time for Track Plotter:' + str(time.time()-startTime))
-        if hasattr(self,'CurrentCamTracks') and hasattr(self,'CurrentRdrTracks'):
-            s= '# Cam Tracks: ' + str(len(self.CurrentCamTracks.tracks)) + '; Rdr Tracks ' + str(len(self.CurrentRdrTracks.tracks)) +'; # Combined Tracks:'\
-            +( str(len(self.CombinedTracks.tracks)) if hasattr(self,'CombinedTracks') else 'None')
+        if hasattr(self,'CurrentCamTracks') or hasattr(self,'CurrentRdrTracks'):
+            s= '# Cam Tracks: ' + (str(len(self.CurrentCamTracks.tracks)) if hasattr(self,'CurrentCamTracks') else 'None') + \
+             '; Rdr Tracks: ' + (str(len(self.CurrentRdrTracks.tracks)) if hasattr(self,'CurrentRdrTracks') else 'None') +'; # Combined Tracks:'\
+            +(str(len(self.CombinedTracks.tracks)) if hasattr(self,'CombinedTracks') else 'None')
             print(s)
        
        
