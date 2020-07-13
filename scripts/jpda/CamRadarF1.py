@@ -89,7 +89,10 @@ class jpda_class():
                 self.RdrMsrmtsMKZ(rospy.wait_for_message('/as_tx/objects', ObjectWithCovarianceArray))
                 # print('TOTAL for RDR:' + str(time.time()-startTime))
                 # startTime=time.time()
-                self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes))
+                try:
+                    self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes,timeout=0.1))
+                except:
+                    rospy.loginfo('No Camera Data/Bounding Boxes found')
                 # print('TOTAL for CAM:' + str(time.time()-startTime))
                 # startTime=time.time()
                 self.CamRdrCombine()
@@ -344,7 +347,7 @@ class jpda_class():
             self.CurrentRdrTracks.tracks=np.delete(self.CurrentRdrTracks.tracks,toDel)
 
     def trackMaintenance(self,SensorData):
-        if not (hasattr(self, 'CurrentRdrTracks') and hasattr(self, 'CurrentCamTracks')):
+        if not (hasattr(self, 'CurrentRdrTracks') or hasattr(self, 'CurrentCamTracks')):
             return
         if isinstance(SensorData[0],CamObj): 
             SensorIndices=[]
@@ -361,8 +364,8 @@ class jpda_class():
                 # Above yields array of possible measurments (only indices) corresponding to a particular track
             self.KalmanEstimate(SensorData,SensorIndices, self.Method) # Includes DataAssociation Calcs
             self.KalmanPropagate(SensorData)
-            self.TrackPubRdr.publish(header=self.CurrentRdrTracks.header, tracks =self.CurrentRdrTracks.tracks)
-            rospy.loginfo_once('Current tracks published to topic /dataAssoc')
+            # self.TrackPubRdr.publish(header=self.CurrentRdrTracks.header, tracks =self.CurrentRdrTracks.tracks)
+            # rospy.loginfo_once('Current tracks published to topic /dataAssoc')
 
     def InitSensorValidator(self,SensorIndicesInit,jdx):
         #takes SensorIndices 2 D python array and current Sensor index being checked;
@@ -379,10 +382,10 @@ class jpda_class():
     def trackPlotter(self):
         if not (hasattr(self,'image')) or (self.PlotArg=='0'):
            return # Skip function call if image is not available or plotting is disabled
-        if (not hasattr(self, 'CurrentRdrTracks')) or (not hasattr(self,'CurrentCamTracks')):
-            return # Skip if either of current tracks are zero
         LocalImage=self.image
         if (self.PlotArg=='3') or (self.PlotArg=='4'): # Then, plot Radar stuff
+            if not hasattr(self,'CurrentRdrTracks'):
+                return # Skip
             CurrentRdrTracks=self.CurrentRdrTracks
             n=len(CurrentRdrTracks.tracks)
             RadarAnglesH=np.zeros((n,1))
@@ -411,6 +414,8 @@ class jpda_class():
         
         #Now Plot Camera Trakcs:
         if (self.PlotArg=='2') or (self.PlotArg=='4'): # Then, plot Cam stuff
+            if not hasattr(self,'CurrentCamTracks'):
+                return # Skip
             CurrentCamTracks=self.CurrentCamTracks
             RectClr=[]
             for jdx in range(len(CurrentCamTracks.tracks)):
