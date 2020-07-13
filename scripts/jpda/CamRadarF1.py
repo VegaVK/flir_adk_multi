@@ -53,9 +53,9 @@ class jpda_class():
         self.YoloClassList=[0,1,2] # For Yolov3_flir
         self.GateThreshRdr =5# Scaling factor, threshold for gating
         self.GateThreshCam=10# TODO: adjust?
-        self.trackInitRdrThresh=2 # For track initiation
+        self.trackInitRdrThresh=0.5 # For track initiation
         self.trackInitCamThresh=3 # Radius of 15 pixels allowed
-        self.CombGateThresh=15# in pixels (added to radius buffer)
+        self.CombGateThresh=20# in pixels (added to radius buffer)
         self.bridge=CvBridge()
         self.font=cv2.FONT_HERSHEY_SIMPLEX 
         # Initializing parameters:
@@ -86,18 +86,10 @@ class jpda_class():
             rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
             while not rospy.is_shutdown():
                 # startTime=time.time()
-                try:
-                    self.RdrMsrmtsMKZ(rospy.wait_for_message('/as_tx/objects', ObjectWithCovarianceArray,timeout=0.2))
-                except:
-                    print('NOTHING RECEIVED on RDR')
-                    pass
+                self.RdrMsrmtsMKZ(rospy.wait_for_message('/as_tx/objects', ObjectWithCovarianceArray))
                 # print('TOTAL for RDR:' + str(time.time()-startTime))
                 # startTime=time.time()
-                try:
-                    self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes,timeout=0.2))
-                except:
-                    print('NOTHING RECEIVED on CAM')
-                    pass
+                self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes))
                 # print('TOTAL for CAM:' + str(time.time()-startTime))
                 # startTime=time.time()
                 self.CamRdrCombine()
@@ -142,16 +134,18 @@ class jpda_class():
         elif isinstance(SensorData[0],CamObj): 
             if hasattr(self, 'InitiatedCamTracks'):
                 # Then, move to current tracks based on NN-style gating
+                
                 toDel=[]
                 InitiatedCamTracks=self.InitiatedCamTracks
                 # first build array of all sensor indices that are within validation gate of current tracks
                 if hasattr(self,'CurrentCamTracks'):
+                    TempCurrTracks=self.CurrentCamTracks
                     SensorIndicesInit=[]
-                    for cdx in range(len(self.CurrentCamTracks.tracks)):
-                        SensorIndicesInit.append(self.ValidationGate(SensorData,self.CurrentCamTracks.tracks[cdx]))
+                    for cdx in range(len(TempCurrTracks.tracks)):
+                        SensorIndicesInit.append(self.ValidationGate(SensorData,TempCurrTracks.tracks[cdx]))
                 else:
                     SensorIndicesInit=[] 
-                for idx in range(len(self.InitiatedCamTracks.tracks)):
+                for idx in range(len(InitiatedCamTracks.tracks)):
                     R=[]
                     if len(SensorData)==0:
                         continue
@@ -160,8 +154,8 @@ class jpda_class():
                         if self.InitSensorValidator(SensorIndicesInit,jdx):
                             continue 
                         else:
-                            R.append(np.sqrt((self.InitiatedCamTracks.tracks[idx].yPx.data-(SensorData[jdx].xmax+SensorData[jdx].xmin)/2)**2 \
-                            +(self.InitiatedCamTracks.tracks[idx].zPx.data-(SensorData[jdx].ymax+SensorData[jdx].ymin)/2)**2))
+                            R.append(np.sqrt((InitiatedCamTracks.tracks[idx].yPx.data-(SensorData[jdx].xmax+SensorData[jdx].xmin)/2)**2 \
+                            +(InitiatedCamTracks.tracks[idx].zPx.data-(SensorData[jdx].ymax+SensorData[jdx].ymin)/2)**2))
                     if len(R)==0:
                         R=9000 #Arbitrarily large value
                     R=np.asarray(R)
@@ -169,27 +163,27 @@ class jpda_class():
                         jdx=np.argmin(R)
                         if  not hasattr(self, 'CurrentCamTracks'):
                             self.CurrentCamTracks=trackArrayCam()
-                        delT=self.imageTime.stamp-self.InitiatedCamTracks.header.stamp
+                        delT=self.imageTime.stamp-InitiatedCamTracks.header.stamp
                         delT=delT.to_sec()
                         self.CurrentCamTracks.header=SensorData[jdx].header
-                        self.InitiatedCamTracks.tracks[idx].Stat.data=1 # Moving to current track
+                        InitiatedCamTracks.tracks[idx].Stat.data=1 # Moving to current track
                         # Update the track with new sensor data before pushing to Current tracks
-                        self.InitiatedCamTracks.tracks[idx].VyPx.data=\
-                            (self.InitiatedCamTracks.tracks[idx].yPx.data-(SensorData[jdx].xmax+SensorData[jdx].xmin)/2)/delT
-                        self.InitiatedCamTracks.tracks[idx].VzPx.data=\
-                            (self.InitiatedCamTracks.tracks[idx].zPx.data-(SensorData[jdx].ymax+SensorData[jdx].ymin)/2)/delT
-                        self.InitiatedCamTracks.tracks[idx].widthDot.data=\
-                            (self.InitiatedCamTracks.tracks[idx].width.data-(SensorData[jdx].xmax-SensorData[jdx].xmin))/delT
-                        self.InitiatedCamTracks.tracks[idx].heightDot.data=\
-                            (self.InitiatedCamTracks.tracks[idx].height.data-(SensorData[jdx].ymax-SensorData[jdx].ymin))/delT
-                        self.InitiatedCamTracks.tracks[idx].height.data=(SensorData[jdx].ymax-SensorData[jdx].ymin)
-                        self.InitiatedCamTracks.tracks[idx].width.data=(SensorData[jdx].xmax-SensorData[jdx].xmin)
-                        self.InitiatedCamTracks.tracks[idx].yPx.data=(SensorData[jdx].xmax+SensorData[jdx].xmin)/2
-                        self.InitiatedCamTracks.tracks[idx].zPx.data=(SensorData[jdx].ymax+SensorData[jdx].ymin)/2
-                        self.InitiatedCamTracks.tracks[idx].confidence=SensorData[jdx].confidence
+                        InitiatedCamTracks.tracks[idx].VyPx.data=\
+                            (InitiatedCamTracks.tracks[idx].yPx.data-(SensorData[jdx].xmax+SensorData[jdx].xmin)/2)/delT
+                        InitiatedCamTracks.tracks[idx].VzPx.data=\
+                            (InitiatedCamTracks.tracks[idx].zPx.data-(SensorData[jdx].ymax+SensorData[jdx].ymin)/2)/delT
+                        InitiatedCamTracks.tracks[idx].widthDot.data=\
+                            (InitiatedCamTracks.tracks[idx].width.data-(SensorData[jdx].xmax-SensorData[jdx].xmin))/delT
+                        InitiatedCamTracks.tracks[idx].heightDot.data=\
+                            (InitiatedCamTracks.tracks[idx].height.data-(SensorData[jdx].ymax-SensorData[jdx].ymin))/delT
+                        InitiatedCamTracks.tracks[idx].height.data=(SensorData[jdx].ymax-SensorData[jdx].ymin)
+                        InitiatedCamTracks.tracks[idx].width.data=(SensorData[jdx].xmax-SensorData[jdx].xmin)
+                        InitiatedCamTracks.tracks[idx].yPx.data=(SensorData[jdx].xmax+SensorData[jdx].xmin)/2
+                        InitiatedCamTracks.tracks[idx].zPx.data=(SensorData[jdx].ymax+SensorData[jdx].ymin)/2
+                        InitiatedCamTracks.tracks[idx].confidence=SensorData[jdx].confidence
                         Pk=np.diag([10,10,10,10,10,10,10,10]) # Initial covariance matrix
-                        self.InitiatedCamTracks.tracks[idx].P=Mat_buildROS(Pk)
-                        self.CurrentCamTracks.tracks=np.append(self.CurrentCamTracks.tracks,self.InitiatedCamTracks.tracks[idx])
+                        InitiatedCamTracks.tracks[idx].P=Mat_buildROS(Pk)
+                        self.CurrentCamTracks.tracks=np.append(self.CurrentCamTracks.tracks,InitiatedCamTracks.tracks[idx])
                         toDel.append(idx)
                         SensorData=np.delete(SensorData,np.argmin(R))
                         
@@ -241,11 +235,13 @@ class jpda_class():
         elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
             if hasattr(self, 'InitiatedRdrTracks'):# Some (or Zer0) tracks already exists (i.e, not start of algorithm)
                 toDel=[]
+                InitiatedRdrTracks=self.InitiatedRdrTracks
                 # first build array of all sensor indices that are within validation gate of current tracks
                 if hasattr(self,'CurrentRdrTracks'):
+                    TempCurrTracksRdr=self.CurrentRdrTracks
                     SensorIndicesInitRdr=[]
-                    for cdx in range(len(self.CurrentRdrTracks.tracks)):
-                        SensorIndicesInitRdr.append(self.ValidationGate(SensorData,self.CurrentRdrTracks.tracks[cdx]))
+                    for cdx in range(len(TempCurrTracksRdr.tracks)):
+                        SensorIndicesInitRdr.append(self.ValidationGate(SensorData,TempCurrTracksRdr.tracks[cdx]))
                 else:
                     SensorIndicesInitRdr=[] 
                 for idx in range(len(self.InitiatedRdrTracks.tracks)):
@@ -256,7 +252,6 @@ class jpda_class():
                     if len(SensorData)==0:
                         continue
                     for jdx in range(len(SensorData)):
-                        # print(SensorIndicesInitRdr)
                         if self.InitSensorValidator(SensorIndicesInitRdr,jdx):
                             continue 
                         gateValX.append(np.abs(SensorData[jdx].pose.position.x-self.InitiatedRdrTracks.tracks[idx].x.data))
@@ -316,7 +311,7 @@ class jpda_class():
                     self.InitiatedRdrTracks.tracks[-1].Vc.data=np.sqrt(SensorData[idx].vx_comp**2+SensorData[idx].vy_comp**2)
                     self.InitiatedRdrTracks.tracks[-1].B.data=self.psi -(np.arctan(SensorData[idx].pose.position.y/SensorData[idx].pose.position.x))
                     # TODO: Improve Beta estimate by taking into account relative Vx(invert heading if object istraveling towards car)
-                print(len(self.InitiatedRdrTracks.tracks))
+                    
 
             else: # Start of algorithm, no tracks
                 self.InitiatedRdrTracks=trackArrayRdr()
@@ -384,10 +379,10 @@ class jpda_class():
     def trackPlotter(self):
         if not (hasattr(self,'image')) or (self.PlotArg=='0'):
            return # Skip function call if image is not available or plotting is disabled
+        if (not hasattr(self, 'CurrentRdrTracks')) or (not hasattr(self,'CurrentCamTracks')):
+            return # Skip if either of current tracks are zero
         LocalImage=self.image
         if (self.PlotArg=='3') or (self.PlotArg=='4'): # Then, plot Radar stuff
-            if (not hasattr(self, 'CurrentRdrTracks')):
-                return
             CurrentRdrTracks=self.CurrentRdrTracks
             n=len(CurrentRdrTracks.tracks)
             RadarAnglesH=np.zeros((n,1))
@@ -416,8 +411,6 @@ class jpda_class():
         
         #Now Plot Camera Trakcs:
         if (self.PlotArg=='2') or (self.PlotArg=='4'): # Then, plot Cam stuff
-            if (not hasattr(self, 'CurrentCamTracks')):
-                return
             CurrentCamTracks=self.CurrentCamTracks
             RectClr=[]
             for jdx in range(len(CurrentCamTracks.tracks)):
@@ -481,8 +474,8 @@ class jpda_class():
         # startTime=time.time()
         self.trackPlotter()
         # print('Time for Track Plotter:' + str(time.time()-startTime))
-        if hasattr(self,'CurrentCamTracks') or hasattr(self,'CurrentRdrTracks'):
-            s= '# Cam Tracks: ' + (str(len(self.CurrentCamTracks.tracks)) if hasattr(self,'CurrentCamTracks') else 'None') + '; Rdr Tracks ' + str(len(self.CurrentRdrTracks.tracks))  +'; # Combined Tracks:'\
+        if hasattr(self,'CurrentCamTracks') and hasattr(self,'CurrentRdrTracks'):
+            s= '# Cam Tracks: ' + str(len(self.CurrentCamTracks.tracks)) + '; Rdr Tracks ' + str(len(self.CurrentRdrTracks.tracks)) +'; # Combined Tracks:'\
             +( str(len(self.CombinedTracks.tracks)) if hasattr(self,'CombinedTracks') else 'None')
             print(s)
        
