@@ -52,17 +52,17 @@ class jpda_class():
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
         self.YoloClassList=[0,1,2] # For Yolov3_flir
         self.GateThreshRdr =5# Scaling factor, threshold for gating
-        self.GateThreshCam=10# TODO: adjust?
+        self.GateThreshCam=20# TODO: adjust?
         self.trackInitRdrThresh=0.5 # For track initiation
-        self.trackInitCamThresh=3 # Radius of 15 pixels allowed
+        self.trackInitCamThresh=15 # Radius of 15 pixels allowed
         self.CombGateThresh=20# in pixels (added to radius buffer)
         self.bridge=CvBridge()
         self.font=cv2.FONT_HERSHEY_SIMPLEX 
         # Initializing parameters:
-        self.Q_rdr=np.array([[0.1,0,0,0],[0,0.11,0,0],[0,0,0.1,0],[0,0,0,0.1]])
-        self.R_rdr=np.array([[1,0,0],[0,1,0],[0,0,1]])
-        self.Q_cam=np.diag([1,1,1,1,5,5,5,5])
-        self.R_cam=np.array([[3,0,0,0],[0,3,0,0],[0,0,10,0],[0,0,0,10]])
+        self.Q_rdr=np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,0.5]])
+        self.R_rdr=np.array([[2,0,0],[0,2,0],[0,0,2]])
+        self.Q_cam=np.diag([10,10,15,15,10,10,15,15])
+        self.R_cam=np.array([[20,0,0,0],[0,20,0,0],[0,0,20,0],[0,0,0,20]])
         self.CamMsrtmMatrixH=np.array([[1,0,0,0,0,0,0,0],[0,1,0,0,0,0,0,0],\
             [0,0,1,0,0,0,0,0],[0,0,0,1,0,0,0,0]]) # Only positions and w/h are measured)
         self.Vt=0.0
@@ -90,9 +90,10 @@ class jpda_class():
                 # print('TOTAL for RDR:' + str(time.time()-startTime))
                 # startTime=time.time()
                 try:
-                    self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes,timeout=0.1))
+                    self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes,timeout=0.07))
                 except:
                     rospy.loginfo('No Camera Data/Bounding Boxes found')
+                    # pass
                 # print('TOTAL for CAM:' + str(time.time()-startTime))
                 # startTime=time.time()
                 self.CamRdrCombine()
@@ -347,9 +348,9 @@ class jpda_class():
             self.CurrentRdrTracks.tracks=np.delete(self.CurrentRdrTracks.tracks,toDel)
 
     def trackMaintenance(self,SensorData):
-        if not (hasattr(self, 'CurrentRdrTracks') or hasattr(self, 'CurrentCamTracks')):
-            return
         if isinstance(SensorData[0],CamObj): 
+            if  not hasattr(self, 'CurrentCamTracks'):
+                return
             SensorIndices=[]
             for idx in range(len(self.CurrentCamTracks.tracks)):
                 SensorIndices.append(self.ValidationGate(SensorData,self.CurrentCamTracks.tracks[idx]))#Clean the incoming data - outputs 2D python array
@@ -358,6 +359,8 @@ class jpda_class():
             self.KalmanPropagate(SensorData)
             self.TrackPubCam.publish(self.CurrentCamTracks)
         elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
+            if  not hasattr(self, 'CurrentRdrTracks'):
+                return
             SensorIndices=[]
             for idx in range(len(self.CurrentRdrTracks.tracks)):
                 SensorIndices.append(self.ValidationGate(SensorData,self.CurrentRdrTracks.tracks[idx]))#Clean the incoming data - outputs 2D python array
@@ -497,6 +500,10 @@ class jpda_class():
             if (len(SensorData)<1) or (len(self.CurrentRdrTracks.tracks)<1):
                 Yk=[]
             else:
+                
+                C=3 # Number of false measurements per unit volume (assume)
+                Pd=0.9 #Probability of detection
+                # # Find Nt(j) - the number of targets
                 # ValidationMat=np.zeros((len(SensorData),len(self.CurrentRdrTracks.tracks)+1),dtype=float)
                 # ValidationMat[:,0]=np.ones((len(SensorData),1))[:,0]
                 # # for idx in range(len(SensorData)): #Rows
@@ -507,19 +514,41 @@ class jpda_class():
                 # l=list(permutations(seedList.tolist())) 
                 # L=np.array(l).T
                 # print(L.shape)
-                Phi=len(SensorData)-len(self.CurrentRdrTracks.tracks) # Number of False measurements
-                C=3 # Number of false measurements per unit volume (assume)
-                Pd=0.9 #Probability of detection
-                # Find Nt(j) - the number of targets asociated with each observation j
-                Nt=np.empty([len(SensorData),1])
-                print(Nt)
-                for jdx in range(len(SensorData)):
-                    Nt[jdx]=SensorIndices.count(jdx)
-                print(Nt)
-                if (Nt==0).all():
-                    Yk=[]
-                else:
-                    pass
+                for tdx in range(len(self.CurrentRdrTracks.tracks)):
+                    # Calculate Y_jt and S_jt
+                    # First Sjt, since it only depends on t, not j
+                    Sjt=np.zeros((len(self.CurrentRdrTracks.tracks,3,3)))
+                    Hk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].H)
+                    Pk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].P)
+                    Sjt[tdx]=np.matmul(np.matmul(Hk,Pk),Hk.T)+self.R_rdr
+                    yt=np.array([self.CurrentRdrTracks.tracks[tdx].x.data,self.CurrentRdrTracks.tracks[tdx].y.data, \
+                        self.CurrentRdrTracks.tracks[tdx].Vc.data]).reshape(3,1)
+                    if len(SensorIndices[tdx])==0:
+                        Yk.append([])
+                        continue
+                    elif len(SensorIndices[tdx])==1: # There's only one measurement in gate, it is either for target or for clutter
+                        # So event matrix is either [0,1] or [1,0] - only two possibilities
+                        # P_th1=
+                        pass
+
+                    Yjt=np.zeros((len(SensorIndices[tdx],3)))
+                    for jdx in range(len(SensorIndices[tdx])):
+                        yjt=np.array([SensorData[SensorIndices[tdx][jdx]].pose.position.x,SensorData[SensorIndices[tdx][jdx]].pose.position.y, \
+                            np.sqrt(SensorData[SensorIndices[tdx][jdx]].vx_comp**2+SensorData[SensorIndices[tdx][jdx]].vy_comp**2)]).reshape(3,1)
+                        Yjt[jdx]=yjt-yt
+                # Create Event Matrices
+                # For this, need to group all validation matrices
+
+
+                # Nt=np.empty([len(SensorData),1])
+                # print(Nt)
+                # for jdx in range(len(SensorData)):
+                #     Nt[jdx]=SensorIndices.count(jdx)
+                # print(Nt)
+                # if (Nt==0).all():
+                #     Yk=[]
+                # else:
+                #     pass
 
 
 
@@ -541,6 +570,7 @@ class jpda_class():
                         Yk.append([])
                         continue
                     else:
+                        # print(len(SensorIndices[idx]))
                         for jdx in range(len(SensorIndices[idx])):
                             gateValX.append(np.abs(SensorData[SensorIndices[idx][jdx]].pose.position.x-self.CurrentRdrTracks.tracks[idx].x.data))
                             gateValY.append(np.abs(SensorData[SensorIndices[idx][jdx]].pose.position.y-self.CurrentRdrTracks.tracks[idx].y.data))
@@ -642,7 +672,10 @@ class jpda_class():
                         (Yk[idx].ymax+Yk[idx].ymin)/2,\
                             (Yk[idx].xmax-Yk[idx].xmin),\
                                 (Yk[idx].ymax-Yk[idx].ymin)]).reshape([4,1])
-                    StateVec=StateVec+np.matmul(K,(YkdataAssocStateVec-np.matmul(Hk,StateVec)))
+                    if Method=='Greedy':
+                        StateVec=StateVec+np.matmul(K,(YkdataAssocStateVec-np.matmul(Hk,StateVec)))
+                    else:
+                         StateVec=StateVec+np.matmul(K,YkdataAssocStateVec)
                     self.CurrentCamTracks.tracks[idx].yPx.data=StateVec[0]
                     self.CurrentCamTracks.tracks[idx].zPx.data=StateVec[1]
                     self.CurrentCamTracks.tracks[idx].width.data=StateVec[2]

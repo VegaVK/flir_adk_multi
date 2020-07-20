@@ -90,7 +90,7 @@ class radar_img:
         self.RadarAnglesV=np.zeros((n,1))
         self.MovingObjStatus=np.zeros((n,1)) # To check if object is moving or not
         # Camera Coordinates: X is horizontal, Y is vertical starting from left top corner
-        for idx in range(n):
+        for idx in range(len(self.RadarTracks)):
             if np.sqrt((self.RadarTracks[idx]['RadarAccelX'])**2 + (self.RadarTracks[idx]['RadarAccelY'])**2)>=0.05:
                 self.MovingObjStatus[idx]=1
             else:
