@@ -52,16 +52,16 @@ class jpda_class():
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
         self.YoloClassList=[0,1,2] # For Yolov3_flir
         self.GateThreshRdr =5# Scaling factor, threshold for gating
-        self.GateThreshCam=20# TODO: adjust?
+        self.GateThreshCam=15# TODO: adjust?
         self.trackInitRdrThresh=0.5 # For track initiation
-        self.trackInitCamThresh=15 # Radius of 15 pixels allowed
-        self.CombGateThresh=20# in pixels (added to radius buffer)
+        self.trackInitCamThresh=5 # Radius of 15 pixels allowed
+        self.CombGateThresh=15# in pixels (added to radius buffer)
         self.bridge=CvBridge()
         self.font=cv2.FONT_HERSHEY_SIMPLEX 
         # Initializing parameters:
         self.Q_rdr=np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,0.5]])
         self.R_rdr=np.array([[2,0,0],[0,2,0],[0,0,2]])
-        self.Q_cam=np.diag([10,10,15,15,10,10,15,15])
+        self.Q_cam=np.diag([10,10,20,20,10,10,20,20])
         self.R_cam=np.array([[20,0,0,0],[0,20,0,0],[0,0,20,0],[0,0,0,20]])
         self.CamMsrtmMatrixH=np.array([[1,0,0,0,0,0,0,0],[0,1,0,0,0,0,0,0],\
             [0,0,1,0,0,0,0,0],[0,0,0,1,0,0,0,0]]) # Only positions and w/h are measured)
@@ -500,7 +500,7 @@ class jpda_class():
             if (len(SensorData)<1) or (len(self.CurrentRdrTracks.tracks)<1):
                 Yk=[]
             else:
-                
+                Yk=[]
                 C=3 # Number of false measurements per unit volume (assume)
                 Pd=0.9 #Probability of detection
                 # # Find Nt(j) - the number of targets
@@ -514,28 +514,75 @@ class jpda_class():
                 # l=list(permutations(seedList.tolist())) 
                 # L=np.array(l).T
                 # print(L.shape)
+                Nt=np.zeros((len(SensorData),1))
+                # Build Nt; Nc and Ncbar are built after identifying Thetas
+                flatSensorIndices=[item for sublist in SensorIndices for item in sublist]
+                for jdx in range(len(SensorData)):
+                    Nt[jdx]=(np.count_nonzero(np.array(flatSensorIndices)==jdx))# Number of targets associated exluding false targets
+                # print(SensorIndices)
+                # print(Nt)
+                # Beta=np.zeros(())
                 for tdx in range(len(self.CurrentRdrTracks.tracks)):
                     # Calculate Y_jt and S_jt
                     # First Sjt, since it only depends on t, not j
-                    Sjt=np.zeros((len(self.CurrentRdrTracks.tracks,3,3)))
+                    Sjt=np.zeros((len(self.CurrentRdrTracks.tracks),3,3))
                     Hk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].H)
                     Pk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].P)
                     Sjt[tdx]=np.matmul(np.matmul(Hk,Pk),Hk.T)+self.R_rdr
                     yt=np.array([self.CurrentRdrTracks.tracks[tdx].x.data,self.CurrentRdrTracks.tracks[tdx].y.data, \
                         self.CurrentRdrTracks.tracks[tdx].Vc.data]).reshape(3,1)
                     if len(SensorIndices[tdx])==0:
+                        Yk=list(Yk)
                         Yk.append([])
                         continue
-                    elif len(SensorIndices[tdx])==1: # There's only one measurement in gate, it is either for target or for clutter
-                        # So event matrix is either [0,1] or [1,0] - only two possibilities
-                        # P_th1=
-                        pass
-
-                    Yjt=np.zeros((len(SensorIndices[tdx],3)))
+                    Yjt=np.zeros((3,len(SensorIndices[tdx])))
                     for jdx in range(len(SensorIndices[tdx])):
                         yjt=np.array([SensorData[SensorIndices[tdx][jdx]].pose.position.x,SensorData[SensorIndices[tdx][jdx]].pose.position.y, \
                             np.sqrt(SensorData[SensorIndices[tdx][jdx]].vx_comp**2+SensorData[SensorIndices[tdx][jdx]].vy_comp**2)]).reshape(3,1)
-                        Yjt[jdx]=yjt-yt
+                        # print(yjt.shape)
+                        # print(yt.shape)
+                        # print(Yjt[:,jdx].reshape(3,1).shape)
+                        Yjt[:,jdx]=(yjt-yt).reshape(3)
+                    if len(SensorIndices[tdx])==1: # There's only one measurement in gate, it is either for target or for clutter
+                        # So event matrix is either [0,1] or [1,0] - only two possibilities
+                        phi= np.array([0,1])
+                        P=np.zeros_like(phi) #P_theta
+                        # Build Nc, Ncbar
+                        Nc=np.zeros_like(phi)
+                        Ncbar=np.zeros_like(phi)
+                        Nc[0]=1
+                        Ncbar[0]=0
+                        Nc[1]=0
+                        Ncbar[1]=1
+                        # Last two product terms, PD^t and [1-PD^t] 
+                        Prod1=1
+                        Prod2=1
+                        Prod3=1 # Main product term, with distribution
+                        c=0 # Normalization constant for Prod3
+                        for phi_dx in range(len(phi)):
+                            if Nc[phi_dx]==0:
+                                Prod1=1
+                            if Ncbar[phi_dx]==0:
+                                Prod2=0
+                            else:
+                                for jjdx in range(1,Nc[phi_dx]+1):
+                                    Prod1=Prod1*(Pd**jjdx)
+                                for jbar_dx in range(1,Ncbar[phi_dx]+1):
+                                    Prod2=Prod2*(1-Pd**jbar_dx)
+                            # for nt_jdx in range(len(SensorData)):
+                            # There's only one observation in this case, so no need loop for Prod3:
+                            Prod3=np.exp(-np.matmul(np.matmul(Yjt[:,0].T,Sjt[tdx]),Yjt[:,0])/2)/(np.sqrt((2*np.pi)*np.linalg.det(Sjt[tdx])))
+                            c=c+Prod3
+                            P[phi_dx] =C**phi[phi_dx]*Prod3*Prod2*Prod1
+                        P=P/c # Normalize
+                        Beta=P[0] 
+                        Yk.append(Beta*Yjt[:,0])  # Z(t) in slides
+                    else:
+                        Yk.append([]) # TODO: TEMP SOLUTION
+                        pass #TODO: code for generic theta (event matrix) case
+                       
+
+                    
                 # Create Event Matrices
                 # For this, need to group all validation matrices
 
@@ -692,7 +739,7 @@ class jpda_class():
         elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ): # Use EKF from Truck Platooning paper:
             Yk=self.DataAssociation(SensorData,SensorIndices,Method) # Lists suitable measurements for each track
             for idx in range(len(Yk)):
-                if not Yk[idx]: # No suitable measurements found, move to potential destruct
+                if len(Yk[idx])==0: # No suitable measurements found, move to potential destruct
                     if  self.CurrentRdrTracks.tracks[idx].Stat.data>=10:
                          self.CurrentRdrTracks.tracks[idx].Stat.data+=1
                     else:
@@ -719,12 +766,17 @@ class jpda_class():
                     K=np.dot(np.dot(Pk,Hk.T),np.linalg.inv((np.dot(np.dot(Hk,Pk),Hk.T)+self.R_rdr).astype(float)))
                     self.CurrentRdrTracks.tracks[idx].K=Mat_buildROS(K)
                     StateVec=np.array([x, y,Vc,Beta]).T
-                    rho=np.sqrt(Yk[idx].pose.position.x**2+Yk[idx].pose.position.y**2)
-                    rhoDot=(Yk[idx].pose.position.x*np.sin((psi-Beta).astype(float))*Vc+Yk[idx].pose.position.y*np.cos((psi-Beta).astype(float))*Vc)/rho
-                    YkdataAssocStateVec=np.array([Yk[idx].pose.position.x,rho,rhoDot]).T
-                    StateVec=StateVec.reshape([4,1])
-                    YkdataAssocStateVec=YkdataAssocStateVec.reshape([3,1])
-                    StateVec=StateVec+np.matmul(K,(YkdataAssocStateVec-np.matmul(Hk,StateVec)))
+                    if Method=='Greedy':
+                        rho=np.sqrt(Yk[idx].pose.position.x**2+Yk[idx].pose.position.y**2)
+                        rhoDot=(Yk[idx].pose.position.x*np.sin((psi-Beta).astype(float))*Vc+Yk[idx].pose.position.y*np.cos((psi-Beta).astype(float))*Vc)/rho
+                        YkdataAssocStateVec=np.array([Yk[idx].pose.position.x,rho,rhoDot]).T
+                        StateVec=StateVec.reshape([4,1])
+                        YkdataAssocStateVec=YkdataAssocStateVec.reshape([3,1])
+                        StateVec=StateVec+np.matmul(K,(YkdataAssocStateVec-np.matmul(Hk,StateVec)))
+                        StateVec=StateVec.flatten()
+                    else: # If using JPDA
+                         StateVec=StateVec+np.matmul(K,Yk[idx])
+                         StateVec=StateVec.flatten()
                     self.CurrentRdrTracks.tracks[idx].x.data=StateVec[0]
                     self.CurrentRdrTracks.tracks[idx].y.data=StateVec[1]
                     self.CurrentRdrTracks.tracks[idx].Vc.data=StateVec[2]
