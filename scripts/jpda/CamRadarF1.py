@@ -519,9 +519,7 @@ class jpda_class():
                 flatSensorIndices=[item for sublist in SensorIndices for item in sublist]
                 for jdx in range(len(SensorData)):
                     Nt[jdx]=(np.count_nonzero(np.array(flatSensorIndices)==jdx))# Number of targets associated exluding false targets
-                # print(SensorIndices)
-                # print(Nt)
-                # Beta=np.zeros(())
+
                 # Create Clusters by cycling through SensorIndices, maintain
                 OpenList=[]
                 ClusterList=[]
@@ -542,16 +540,22 @@ class jpda_class():
                                 indices = [i for i, obj in enumerate(SensorIndices[cluster_dx]) if obj == m_dx]
                                 if any(indices) and (not (cluster_dx in tempClusterList)) :
                                     tempClusterList.append(cluster_dx)
-                                    ToDelOpenList.append(cluster_dx) # Delete from OpenList
+                                    ToDelOpenList.append(cluster_dx) # To be Deleted from OpenList
                                     np.append(SensorRdgList,SensorIndices[cluster_dx]).flatten()
-                            OpenList=np.delete(OpenList,ToDelOpenList)
+                            OpenList=np.setdiff1d(OpenList,ToDelOpenList) # Remove from OpenList
                         else:
                             continue
                     # Now add this cluster to ClusterList
                     ClusterList.append(tempClusterList)
                 print(ClusterList)
+                print(SensorIndices)
+
+                # Directly calculate Bjt if cluster size is 1:4 as per Bose Paper
 
 
+                # If cluster size is greater than 4, use approximation as per paper
+
+                ############ OLD JPDA< PLACEHOLDER STUFF:###########
 
                 for tdx in range(len(self.CurrentRdrTracks.tracks)):
                     # Calculate Y_jt and S_jt
