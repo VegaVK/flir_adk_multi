@@ -51,7 +51,7 @@ class jpda_class():
         self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=100) 
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
         self.YoloClassList=[0,1,2] # For Yolov3_flir
-        self.GateThreshRdr =5# Scaling factor, threshold for gating
+        self.GateThreshRdr =1# Scaling factor, threshold for gating
         self.GateThreshCam=15# TODO: adjust?
         self.trackInitRdrThresh=0.5 # For track initiation
         self.trackInitCamThresh=5 # Radius of 15 pixels allowed
@@ -501,7 +501,10 @@ class jpda_class():
                 Yk=[]
             else:
                 Yk=[]
-                C=3 # Number of false measurements per unit volume (assume)
+                #create empty Yk list, with given number of targets (currentTracks):
+                for l_dx in range(len(self.CurrentRdrTracks.tracks)):
+                    Yk.append([])
+                C=3 # Number of false measurements per unit volume (assume), clutter density
                 Pd=0.9 #Probability of detection
                 # # Find Nt(j) - the number of targets
                 # ValidationMat=np.zeros((len(SensorData),len(self.CurrentRdrTracks.tracks)+1),dtype=float)
@@ -547,16 +550,11 @@ class jpda_class():
                             continue
                     # Now add this cluster to ClusterList
                     ClusterList.append(tempClusterList)
-                print(ClusterList)
-                print(SensorIndices)
+                # print(ClusterList)
+                # print(SensorIndices)
 
-                # Directly calculate Bjt if cluster size is 1:4 as per Bose Paper
-
-
-                # If cluster size is greater than 4, use approximation as per paper
-
-                ############ OLD JPDA< PLACEHOLDER STUFF:###########
-
+                ### Directly calculate Bjt if cluster size is 1:4 as per Bose Paper
+                # First calculate Yjt and Sjt:
                 for tdx in range(len(self.CurrentRdrTracks.tracks)):
                     # Calculate Y_jt and S_jt
                     # First Sjt, since it only depends on t, not j
@@ -564,57 +562,157 @@ class jpda_class():
                     Hk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].H)
                     Pk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].P)
                     Sjt[tdx]=np.matmul(np.matmul(Hk,Pk),Hk.T)+self.R_rdr
-                    yt=np.array([self.CurrentRdrTracks.tracks[tdx].x.data,self.CurrentRdrTracks.tracks[tdx].y.data, \
-                        self.CurrentRdrTracks.tracks[tdx].Vc.data]).reshape(3,1)
-                    if len(SensorIndices[tdx])==0:
-                        Yk=list(Yk)
-                        Yk.append([])
-                        continue
-                    Yjt=np.zeros((3,len(SensorIndices[tdx])))
-                    for jdx in range(len(SensorIndices[tdx])):
-                        yjt=np.array([SensorData[SensorIndices[tdx][jdx]].pose.position.x,SensorData[SensorIndices[tdx][jdx]].pose.position.y, \
-                            np.sqrt(SensorData[SensorIndices[tdx][jdx]].vx_comp**2+SensorData[SensorIndices[tdx][jdx]].vy_comp**2)]).reshape(3,1)
+                def PjtCalc(meas_dx,target_dx,YjtLocal,Sjt):
+                    # YjtLocal=YjtCalc(target_dx)
+                    Pjt=Pd*np.exp(-np.matmul(np.matmul(YjtLocal[:,meas_dx].T,Sjt[target_dx]),YjtLocal[:,meas_dx])/2)/(np.sqrt((2*np.pi)*np.linalg.det(Sjt[target_dx])))
+                    return Pjt
+                def YjtCalc(t_idx):
+                    yt=np.array([self.CurrentRdrTracks.tracks[t_idx].x.data,self.CurrentRdrTracks.tracks[t_idx].y.data, \
+                        self.CurrentRdrTracks.tracks[t_idx].Vc.data]).reshape(3,1)
+                    Yjt=np.zeros((3,len(SensorIndices[t_idx])))
+                    for jdx in range(len(SensorIndices[t_idx])):
+                        yjt=np.array([SensorData[SensorIndices[t_idx][jdx]].pose.position.x,SensorData[SensorIndices[t_idx][jdx]].pose.position.y, \
+                            np.sqrt(SensorData[SensorIndices[t_idx][jdx]].vx_comp**2+SensorData[SensorIndices[t_idx][jdx]].vy_comp**2)]).reshape(3,1)
                         # print(yjt.shape)
                         # print(yt.shape)
                         # print(Yjt[:,jdx].reshape(3,1).shape)
                         Yjt[:,jdx]=(yjt-yt).reshape(3)
-                    if len(SensorIndices[tdx])==1: # There's only one measurement in gate, it is either for target or for clutter
-                        # So event matrix is either [0,1] or [1,0] - only two possibilities
-                        phi= np.array([0,1])
-                        P=np.zeros_like(phi) #P_theta
-                        # Build Nc, Ncbar
-                        Nc=np.zeros_like(phi)
-                        Ncbar=np.zeros_like(phi)
-                        Nc[0]=1
-                        Ncbar[0]=0
-                        Nc[1]=0
-                        Ncbar[1]=1
-                        # Last two product terms, PD^t and [1-PD^t] 
-                        Prod1=1
-                        Prod2=1
-                        Prod3=1 # Main product term, with distribution
-                        c=0 # Normalization constant for Prod3
-                        for phi_dx in range(len(phi)):
-                            if Nc[phi_dx]==0:
-                                Prod1=1
-                            if Ncbar[phi_dx]==0:
-                                Prod2=0
+                    return Yjt
+                
+                for clusterItem in ClusterList:
+                    if len(clusterItem)==1:
+                        B0t=C*(1-Pd)
+                        Yjt=YjtCalc(clusterItem[0])
+                        c=B0t
+                        if len(SensorIndices[clusterItem[0]])>0:
+                            Z_temp=np.zeros_like(Yjt[:,0])
+                            for j_idx in range(len(SensorIndices[clusterItem[0]])):
+                                Bjt=PjtCalc(j_idx,clusterItem[0],Yjt,Sjt)
+                                c=c+Bjt
+                                Z_temp=Z_temp+Bjt*Yjt[:,j_idx]
+                                
+                            Yk[clusterItem[0]]=Z_temp/c
+                        else: # No measurement associated with this particular object in clusterItem
+                            pass # Already Yk[clusterItem[0]] =[] by default
+                    elif len(clusterItem)==2:
+                        P0=C*(1-Pd)
+                        P1=P0 
+                        P2=P0
+                        #Build P1:
+                        Yjt1=YjtCalc(clusterItem[0])
+                        for jdx in range(len(SensorIndices[clusterItem[0]])):
+                            P1=P1+PjtCalc(jdx,clusterItem[0],Yjt1,Sjt)
+                        # Build P2:
+                        Yjt2=YjtCalc(clusterItem[1])
+                        
+                        for jdx in range(len(SensorIndices[clusterItem[1]])):
+                            # print(jdx)
+                            P2=P2+PjtCalc(jdx,clusterItem[1],Yjt2,Sjt)
+                        #  Now build Bjts:
+                        B0t1=P0*P2
+                        c1=B0t1
+                        # Calculate Bjt1:
+                        Z_temp=np.zeros_like(Yjt1[:,0])
+                        # print(clusterItem)
+                        # print(SensorIndices)
+                        # print(len(SensorIndices[clusterItem[0]]))
+                        for j_idx in range(len(SensorIndices[clusterItem[0]])):
+                            # print(j_idx)
+                            if SensorIndices[clusterItem[0]][j_idx] in SensorIndices[clusterItem[1]]:
+                                Bjt1=PjtCalc(j_idx,clusterItem[0],Yjt1,Sjt)*(P2-PjtCalc(j_idx,clusterItem[1],Yjt1,Sjt))
+                                c1=c1+Bjt1
+                            
                             else:
-                                for jjdx in range(1,Nc[phi_dx]+1):
-                                    Prod1=Prod1*(Pd**jjdx)
-                                for jbar_dx in range(1,Ncbar[phi_dx]+1):
-                                    Prod2=Prod2*(1-Pd**jbar_dx)
-                            # for nt_jdx in range(len(SensorData)):
-                            # There's only one observation in this case, so no need loop for Prod3:
-                            Prod3=np.exp(-np.matmul(np.matmul(Yjt[:,0].T,Sjt[tdx]),Yjt[:,0])/2)/(np.sqrt((2*np.pi)*np.linalg.det(Sjt[tdx])))
-                            c=c+Prod3
-                            P[phi_dx] =C**phi[phi_dx]*Prod3*Prod2*Prod1
-                        P=P/c # Normalize
-                        Beta=P[0] 
-                        Yk.append(Beta*Yjt[:,0])  # Z(t) in slides
+                                Bjt1=PjtCalc(j_idx,clusterItem[0],Yjt1,Sjt)*(P2)
+                                c1=c1+Bjt1
+                            Z_temp=Z_temp+Bjt1*Yjt1[:,j_idx]
+                        # Add to Yk:
+                        Yk[clusterItem[0]]=Z_temp/c1
+                        # Now Calculate Bjt2:
+                        B0t2=P0*P1
+                        c2=B0t2
+                        Z_temp=np.zeros_like(Yjt2[:,0])
+                        for j_idx in range(len(SensorIndices[clusterItem[1]])):
+                            if SensorIndices[clusterItem[1]][j_idx] in SensorIndices[clusterItem[0]]:
+                                Bjt2=PjtCalc(j_idx,clusterItem[1],Yjt2,Sjt)*(P1-PjtCalc(j_idx,clusterItem[0],Yjt2,Sjt))
+                                c2=c2+Bjt2
+                            else:
+                                Bjt2=PjtCalc(j_idx,clusterItem[1],Yjt2,Sjt)*(P1)
+                                c2=c2+Bjt2
+                            Z_temp=Z_temp+Bjt2*Yjt2[:,j_idx]
+                         # Add to Yk:
+                        Yk[clusterItem[1]]=Z_temp/c1
+
                     else:
-                        Yk.append([]) # TODO: TEMP SOLUTION
-                        pass #TODO: code for generic theta (event matrix) case
+                        print('LARGE CLUSTER DENSITY!!!!')
+                        pass
+
+
+
+
+
+                # If cluster size is greater than 4, use approximation as per paper (TODO, if required)
+
+                ############ OLD JPDA< PLACEHOLDER STUFF:###########
+
+                # for tdx in range(len(self.CurrentRdrTracks.tracks)):
+                #     # Calculate Y_jt and S_jt
+                #     # First Sjt, since it only depends on t, not j
+                #     Sjt=np.zeros((len(self.CurrentRdrTracks.tracks),3,3))
+                #     Hk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].H)
+                #     Pk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].P)
+                #     Sjt[tdx]=np.matmul(np.matmul(Hk,Pk),Hk.T)+self.R_rdr
+                #     yt=np.array([self.CurrentRdrTracks.tracks[tdx].x.data,self.CurrentRdrTracks.tracks[tdx].y.data, \
+                #         self.CurrentRdrTracks.tracks[tdx].Vc.data]).reshape(3,1)
+                #     if len(SensorIndices[tdx])==0:
+                #         Yk=list(Yk)
+                #         Yk.append([])
+                #         continue
+                #     Yjt=np.zeros((3,len(SensorIndices[tdx])))
+                #     for jdx in range(len(SensorIndices[tdx])):
+                #         yjt=np.array([SensorData[SensorIndices[tdx][jdx]].pose.position.x,SensorData[SensorIndices[tdx][jdx]].pose.position.y, \
+                #             np.sqrt(SensorData[SensorIndices[tdx][jdx]].vx_comp**2+SensorData[SensorIndices[tdx][jdx]].vy_comp**2)]).reshape(3,1)
+                #         # print(yjt.shape)
+                #         # print(yt.shape)
+                #         # print(Yjt[:,jdx].reshape(3,1).shape)
+                #         Yjt[:,jdx]=(yjt-yt).reshape(3)
+                #     if len(SensorIndices[tdx])==1: # There's only one measurement in gate, it is either for target or for clutter
+                #         # So event matrix is either [0,1] or [1,0] - only two possibilities
+                #         phi= np.array([0,1])
+                #         P=np.zeros_like(phi) #P_theta
+                #         # Build Nc, Ncbar
+                #         Nc=np.zeros_like(phi)
+                #         Ncbar=np.zeros_like(phi)
+                #         Nc[0]=1
+                #         Ncbar[0]=0
+                #         Nc[1]=0
+                #         Ncbar[1]=1
+                #         # Last two product terms, PD^t and [1-PD^t] 
+                #         Prod1=1
+                #         Prod2=1
+                #         Prod3=1 # Main product term, with distribution
+                #         c=0 # Normalization constant for Prod3
+                #         for phi_dx in range(len(phi)):
+                #             if Nc[phi_dx]==0:
+                #                 Prod1=1
+                #             if Ncbar[phi_dx]==0:
+                #                 Prod2=0
+                #             else:
+                #                 for jjdx in range(1,Nc[phi_dx]+1):
+                #                     Prod1=Prod1*(Pd**jjdx)
+                #                 for jbar_dx in range(1,Ncbar[phi_dx]+1):
+                #                     Prod2=Prod2*(1-Pd**jbar_dx)
+                #             # for nt_jdx in range(len(SensorData)):
+                #             # There's only one observation in this case, so no need loop for Prod3:
+                #             Prod3=np.exp(-np.matmul(np.matmul(Yjt[:,0].T,Sjt[tdx]),Yjt[:,0])/2)/(np.sqrt((2*np.pi)*np.linalg.det(Sjt[tdx])))
+                #             c=c+Prod3
+                #             P[phi_dx] =C**phi[phi_dx]*Prod3*Prod2*Prod1
+                #         P=P/c # Normalize
+                #         Beta=P[0] 
+                #         Yk.append(Beta*Yjt[:,0])  # Z(t) in slides
+                #     else:
+                #         Yk.append([]) # TODO: TEMP SOLUTION
+                #         pass #TODO: code for generic theta (event matrix) case
                        
 
                     
