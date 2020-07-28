@@ -522,6 +522,37 @@ class jpda_class():
                 # print(SensorIndices)
                 # print(Nt)
                 # Beta=np.zeros(())
+                # Create Clusters by cycling through SensorIndices, maintain
+                OpenList=[]
+                ClusterList=[]
+                for tempdx in range(len(self.CurrentRdrTracks.tracks)):
+                    OpenList.append(tempdx)
+                OpenList=np.array(OpenList)
+                while any(OpenList):
+                    tempClusterList=[]
+                    tempClusterList.append(OpenList[0])
+                    SensorRdgList=np.array(SensorIndices[OpenList[0]]).flatten()
+                    OpenList=np.delete(OpenList,0) # Remove this element from searchable list of tracks, will be added later to ClusterList
+                    # Chase down all other tracks that share common sensor measurements
+                    n_meas=len(SensorData) # Total number of possible measurements
+                    for m_dx in range(n_meas):
+                        if m_dx in SensorRdgList:
+                            ToDelOpenList=[]
+                            for cluster_dx in OpenList:
+                                indices = [i for i, obj in enumerate(SensorIndices[cluster_dx]) if obj == m_dx]
+                                if any(indices) and (not (cluster_dx in tempClusterList)) :
+                                    tempClusterList.append(cluster_dx)
+                                    ToDelOpenList.append(cluster_dx) # Delete from OpenList
+                                    np.append(SensorRdgList,SensorIndices[cluster_dx]).flatten()
+                            OpenList=np.delete(OpenList,ToDelOpenList)
+                        else:
+                            continue
+                    # Now add this cluster to ClusterList
+                    ClusterList.append(tempClusterList)
+                print(ClusterList)
+
+
+
                 for tdx in range(len(self.CurrentRdrTracks.tracks)):
                     # Calculate Y_jt and S_jt
                     # First Sjt, since it only depends on t, not j
