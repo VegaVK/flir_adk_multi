@@ -15,6 +15,7 @@ from geometry_msgs.msg import TwistStamped
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Header
 from darknet_ros_msgs.msg import BoundingBoxes
+from darknet_ros_msgs.msg import ObjectCount
 from nuscenes2bag.msg import RadarObjects
 from utils import Mat_buildROS
 from utils import Mat_extractROS
@@ -51,18 +52,19 @@ class jpda_class():
         self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=100) 
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
         self.YoloClassList=[0,1,2] # For Yolov3_flir
-        self.GateThreshRdr =0.75# Scaling factor, threshold for gating
-        self.GateThreshCam=15# TODO: adjust?
+        self.GateThreshRdr =1# Scaling factor, threshold for gating
+        self.GateThreshCam=5# TODO: adjust?
         self.trackInitRdrThresh=0.3 # For track initiation
         self.trackInitCamThresh=5 # Radius of 15 pixels allowed
-        self.CombGateThresh=15# in pixels (added to radius buffer)
+        self.CombGateThresh=20# in pixels (added to radius buffer)
         self.bridge=CvBridge()
         self.font=cv2.FONT_HERSHEY_SIMPLEX 
         # Initializing parameters:
         self.Q_rdr=np.array([[10,0,0,0],[0,10,0,0],[0,0,5,0],[0,0,0,1]])
         self.R_rdr=np.array([[3,0,0],[0,3,0],[0,0,3]])
-        self.Q_cam=np.diag([10,10,20,20,10,10,20,20])
-        self.R_cam=np.array([[20,0,0,0],[0,20,0,0],[0,0,20,0],[0,0,0,20]])
+        # self.Q_cam=np.diag([10,10,15,15,10,10,15,15])
+        self.Q_cam=np.diag([5,5,10,10,10,10,20,20])
+        self.R_cam=np.array([[5,0,0,0],[0,5,0,0],[0,0,5,0],[0,0,0,5]])
         self.CamMsrtmMatrixH=np.array([[1,0,0,0,0,0,0,0],[0,1,0,0,0,0,0,0],\
             [0,0,1,0,0,0,0,0],[0,0,0,1,0,0,0,0]]) # Only positions and w/h are measured)
         self.Vt=0.0
@@ -72,9 +74,10 @@ class jpda_class():
         self.psiD=0.0# psiDot
         self.Method=Method
         self.PlotArg=PlotArg
-        self.HorzOffset=10# For translation from radar to cam coordinates, manual offset
+        self.HorzOffset=0# For translation from radar to cam coordinates, manual offset
         self.CamXOffset=2.36#=93 inches, measured b/w cam and Rdr, in x direction
         self.CamZoffset=1 # Roughly 40 inches
+        self.BBoxStore=BoundingBoxes()
         if DataSetType=="NuSc":
             rospy.Subscriber('/cam_front/raw', Image, self.buildImage)
             rospy.Subscriber('/vel', Twist, self.Odom1NuSc) 
@@ -85,23 +88,33 @@ class jpda_class():
             rospy.Subscriber('/Thermal_Panorama', Image, self.buildImage)
             rospy.Subscriber('/imu/data', Imu, self.Odom2MKZ) # TODO: fix after IMU is available
             rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
+            rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes,self.BBoxBuilder)
+            
+            rate=rospy.Rate(10) # 20 Hz
             while not rospy.is_shutdown():
                 # CycleStartTime=time.time()
                 # startTime=time.time()
-                self.RdrMsrmtsMKZ(rospy.wait_for_message('/as_tx/objects', ObjectWithCovarianceArray))
-                # print('TOTAL for RDR:' + str(time.time()-startTime))
+                # rospy.Subscriber('/as_tx/objects', ObjectWithCovarianceArray,self.RdrMsrmtsMKZ)
+                # rospy.Subscriber('/darknet_ros/found_object', ObjectCount,self.CamMsrmts)
                 
-                # startTime=time.time()
-                try:
-                    self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes))
-                except:
-                    rospy.loginfo('No Camera Data/Bounding Boxes found')
-                    # pass
+                self.RdrMsrmtsMKZ(rospy.wait_for_message('/as_tx/objects', ObjectWithCovarianceArray))
+                self.CamMsrmts(rospy.wait_for_message('/darknet_ros/found_object', ObjectCount))
+
+                # # print('TOTAL for RDR:' + str(time.time()-startTime))
+                
+                # # startTime=time.time()
+                # try:
+                #    rospy.Subscriber('/darknet_ros/found_object', ObjectCount,self.CamMsrmts)
+                # except:
+                #     rospy.loginfo('No Camera Data/Bounding Boxes found')
+                #     pass
                 # print('TOTAL for CAM:' + str(time.time()-startTime))
                 # startTimeCom=time.time()
-                self.CamRdrCombine()
+                
                 # print('Time Combining:' + str(time.time()-startTimeCom))
                 # print('Total Cycle Time:' + str(time.time()-CycleStartTime))
+                self.CamRdrCombine()
+                rate.sleep()
             
         
     def buildImage(self,data):
@@ -270,7 +283,7 @@ class jpda_class():
                         gateValRMS=1000# Arbitrary large value, greater than trackInitRdrThresh
                     if (np.min(np.array(gateValRMS))<=self.trackInitRdrThresh): # @50Hz, 20m/s in X dir and 10m/s in Y-Direction as validation gate
                         #If gate is satisfied, move to CurrentRdrTracks after initiating P and deleting that SensorData[idx]
-                        self.InitiatedRdrTracks.tracks[idx].P=Mat_buildROS(np.array([[2,0,0,0],[0,2,0,0],[0,0,1,0],[0,0,0,1]]))
+                        self.InitiatedRdrTracks.tracks[idx].P=Mat_buildROS(np.array([[3,0,0,0],[0,3,0,0],[0,0,3,0],[0,0,0,1]]))
                         #(Large uncertainity given to Beta. Others conservatively picked based on Delphi ESR spec sheet)
                         self.InitiatedRdrTracks.tracks[idx].Stat.data=1# Moving to CurrentRdrTracks
                         x=self.InitiatedRdrTracks.tracks[idx].x.data
@@ -340,7 +353,7 @@ class jpda_class():
                 return
             toDel=[]
             for idx in range(len(self.CurrentCamTracks.tracks)):
-                if self.CurrentCamTracks.tracks[idx].Stat.data>=20:# Testing, made less persistent
+                if self.CurrentCamTracks.tracks[idx].Stat.data>=18:# Testing, made less persistent
                     toDel.append(idx)
             self.CurrentCamTracks.tracks=np.delete(self.CurrentCamTracks.tracks,toDel)
         elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
@@ -348,7 +361,7 @@ class jpda_class():
                 return
             toDel=[]
             for idx in range(len(self.CurrentRdrTracks.tracks)):
-                if self.CurrentRdrTracks.tracks[idx].Stat.data>=15: # If no measurements associated for 4 steps
+                if self.CurrentRdrTracks.tracks[idx].Stat.data>=14: # If no measurements associated for 4 steps
                     toDel.append(idx)
             self.CurrentRdrTracks.tracks=np.delete(self.CurrentRdrTracks.tracks,toDel)
 
@@ -474,7 +487,7 @@ class jpda_class():
             radius=(self.CurrentCamTracks.tracks[jdx].width.data+self.CurrentCamTracks.tracks[jdx].height.data)/2+self.CombGateThresh
             centerY=self.CurrentCamTracks.tracks[jdx].yPx.data
             for Rdx in range(len(LocalRdrYArr)):
-                if (abs(LocalRdrYArr[Rdx]-centerY)<=radius) or (self.CurrentCamTracks.tracks[jdx].confidence>=0.60):
+                if (abs(LocalRdrYArr[Rdx]-centerY)<=radius) or (self.CurrentCamTracks.tracks[jdx].confidence>=0.36):
                     self.CurrentCamTracks.tracks[jdx].Stat.data=99 #To indicate that the status is combined/validated
                     #TODO: Create a custom CombinedTracks Message that has both radar and Camera info?
                     self.CombinedTracks.tracks.append(self.CurrentCamTracks.tracks[jdx])
@@ -791,7 +804,7 @@ class jpda_class():
 
     def KalmanEstimate(self,SensorData,SensorIndices, Method):
         if isinstance(SensorData[0],CamObj): 
-            Yk=self.DataAssociation(SensorData,SensorIndices,Method)
+            Yk=self.DataAssociation(SensorData,SensorIndices,'Greedy') # The Camera always uses Greedy method
             for idx in range(len(Yk)):
                 if not Yk[idx]: # No suitable measurements found, move to potential destruct
                     if  self.CurrentCamTracks.tracks[idx].Stat.data>=10:
@@ -813,10 +826,7 @@ class jpda_class():
                         (Yk[idx].ymax+Yk[idx].ymin)/2,\
                             (Yk[idx].xmax-Yk[idx].xmin),\
                                 (Yk[idx].ymax-Yk[idx].ymin)]).reshape([4,1])
-                    if Method=='Greedy':
-                        StateVec=StateVec+np.matmul(K,(YkdataAssocStateVec-np.matmul(Hk,StateVec)))
-                    else:
-                         StateVec=StateVec+np.matmul(K,YkdataAssocStateVec)
+                    StateVec=StateVec+np.matmul(K,(YkdataAssocStateVec-np.matmul(Hk,StateVec)))
                     self.CurrentCamTracks.tracks[idx].yPx.data=StateVec[0]
                     self.CurrentCamTracks.tracks[idx].zPx.data=StateVec[1]
                     self.CurrentCamTracks.tracks[idx].width.data=StateVec[2]
@@ -920,8 +930,13 @@ class jpda_class():
                 if (Temp[0]<=self.GateThreshRdr**2):
                     SensorIdxOut.append(jdx)
         return SensorIdxOut # returns a python list, not numpy array
+    def BBoxBuilder(self,data):
+        self.BBoxStore=data
 
-    def CamMsrmts(self,data):
+    def CamMsrmts(self,DataIn):
+        # if DataIn.count>0:
+        data=self.BBoxStore
+        # data.header=DataIn.header
         self.CamReadings=[]
         for idx in range(len(data.bounding_boxes)):
             if (data.bounding_boxes[idx].id in self.YoloClassList) and (data.bounding_boxes[idx].probability>0.3): # Only add if confident of detection
