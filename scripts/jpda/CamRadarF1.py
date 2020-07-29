@@ -51,16 +51,16 @@ class jpda_class():
         self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=100) 
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
         self.YoloClassList=[0,1,2] # For Yolov3_flir
-        self.GateThreshRdr =1# Scaling factor, threshold for gating
+        self.GateThreshRdr =0.75# Scaling factor, threshold for gating
         self.GateThreshCam=15# TODO: adjust?
-        self.trackInitRdrThresh=0.5 # For track initiation
+        self.trackInitRdrThresh=0.3 # For track initiation
         self.trackInitCamThresh=5 # Radius of 15 pixels allowed
         self.CombGateThresh=15# in pixels (added to radius buffer)
         self.bridge=CvBridge()
         self.font=cv2.FONT_HERSHEY_SIMPLEX 
         # Initializing parameters:
-        self.Q_rdr=np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,0.5]])
-        self.R_rdr=np.array([[2,0,0],[0,2,0],[0,0,2]])
+        self.Q_rdr=np.array([[10,0,0,0],[0,10,0,0],[0,0,5,0],[0,0,0,1]])
+        self.R_rdr=np.array([[3,0,0],[0,3,0],[0,0,3]])
         self.Q_cam=np.diag([10,10,20,20,10,10,20,20])
         self.R_cam=np.array([[20,0,0,0],[0,20,0,0],[0,0,20,0],[0,0,0,20]])
         self.CamMsrtmMatrixH=np.array([[1,0,0,0,0,0,0,0],[0,1,0,0,0,0,0,0],\
@@ -72,6 +72,7 @@ class jpda_class():
         self.psiD=0.0# psiDot
         self.Method=Method
         self.PlotArg=PlotArg
+        self.HorzOffset=10# For translation from radar to cam coordinates, manual offset
         self.CamXOffset=2.36#=93 inches, measured b/w cam and Rdr, in x direction
         self.CamZoffset=1 # Roughly 40 inches
         if DataSetType=="NuSc":
@@ -85,19 +86,22 @@ class jpda_class():
             rospy.Subscriber('/imu/data', Imu, self.Odom2MKZ) # TODO: fix after IMU is available
             rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
             while not rospy.is_shutdown():
+                # CycleStartTime=time.time()
                 # startTime=time.time()
                 self.RdrMsrmtsMKZ(rospy.wait_for_message('/as_tx/objects', ObjectWithCovarianceArray))
                 # print('TOTAL for RDR:' + str(time.time()-startTime))
+                
                 # startTime=time.time()
                 try:
-                    self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes,timeout=0.07))
+                    self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes,timeout=0.06))
                 except:
                     rospy.loginfo('No Camera Data/Bounding Boxes found')
                     # pass
                 # print('TOTAL for CAM:' + str(time.time()-startTime))
-                # startTime=time.time()
+                # startTimeCom=time.time()
                 self.CamRdrCombine()
-                # print('Time Combining:' + str(time.time()-startTime))
+                # print('Time Combining:' + str(time.time()-startTimeCom))
+                # print('Total Cycle Time:' + str(time.time()-CycleStartTime))
             
         
     def buildImage(self,data):
@@ -258,9 +262,10 @@ class jpda_class():
                     for jdx in range(len(SensorData)):
                         if self.InitSensorValidator(SensorIndicesInitRdr,jdx):
                             continue 
-                        gateValX.append(np.abs(SensorData[jdx].pose.position.x-self.InitiatedRdrTracks.tracks[idx].x.data))
-                        gateValY.append(np.abs(SensorData[jdx].pose.position.y-self.InitiatedRdrTracks.tracks[idx].y.data))
-                        gateValRMS.append(np.sqrt((gateValX[-1])**2+(gateValY[-1])**2))
+                        else:
+                            gateValX.append(np.abs(SensorData[jdx].pose.position.x-self.InitiatedRdrTracks.tracks[idx].x.data))
+                            gateValY.append(np.abs(SensorData[jdx].pose.position.y-self.InitiatedRdrTracks.tracks[idx].y.data))
+                            gateValRMS.append(np.sqrt((gateValX[-1])**2+(gateValY[-1])**2))
                     if len(gateValRMS)==0:
                         gateValRMS=1000# Arbitrary large value, greater than trackInitRdrThresh
                     if (np.min(np.array(gateValRMS))<=self.trackInitRdrThresh): # @50Hz, 20m/s in X dir and 10m/s in Y-Direction as validation gate
@@ -343,7 +348,7 @@ class jpda_class():
                 return
             toDel=[]
             for idx in range(len(self.CurrentRdrTracks.tracks)):
-                if self.CurrentRdrTracks.tracks[idx].Stat.data>=12: # If no measurements associated for 2 steps
+                if self.CurrentRdrTracks.tracks[idx].Stat.data>=15: # If no measurements associated for 4 steps
                     toDel.append(idx)
             self.CurrentRdrTracks.tracks=np.delete(self.CurrentRdrTracks.tracks,toDel)
 
@@ -355,8 +360,12 @@ class jpda_class():
             for idx in range(len(self.CurrentCamTracks.tracks)):
                 SensorIndices.append(self.ValidationGate(SensorData,self.CurrentCamTracks.tracks[idx]))#Clean the incoming data - outputs 2D python array
                 # Above yields array of possible measurments (only indices) corresponding to a particular track
+            # startTime1=time.time()    
             self.KalmanEstimate(SensorData,SensorIndices, self.Method) # Includes DataAssociation Calcs
+            # print('Time for KalmanEstimate:' + str(time.time()-startTime1))
+            # startTime2=time.time() 
             self.KalmanPropagate(SensorData)
+            # print('Time for KalmanPropagate:' + str(time.time()-startTime2))
             self.TrackPubCam.publish(self.CurrentCamTracks)
         elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
             if  not hasattr(self, 'CurrentRdrTracks'):
@@ -365,8 +374,12 @@ class jpda_class():
             for idx in range(len(self.CurrentRdrTracks.tracks)):
                 SensorIndices.append(self.ValidationGate(SensorData,self.CurrentRdrTracks.tracks[idx]))#Clean the incoming data - outputs 2D python array
                 # Above yields array of possible measurments (only indices) corresponding to a particular track
+            # startTimeKE=time.time()    
             self.KalmanEstimate(SensorData,SensorIndices, self.Method) # Includes DataAssociation Calcs
+            # print('Time for KalmanEstimate:' + str(time.time()-startTimeKE))
+            # startTimeKP=time.time() 
             self.KalmanPropagate(SensorData)
+            # print('Time for KalmanPropagate:' + str(time.time()-startTimeKP))
             # self.TrackPubRdr.publish(header=self.CurrentRdrTracks.header, tracks =self.CurrentRdrTracks.tracks)
             # rospy.loginfo_once('Current tracks published to topic /dataAssoc')
 
@@ -456,7 +469,7 @@ class jpda_class():
         for rdx in range(len(self.CurrentRdrTracks.tracks)):
             temp1=np.divide(self.CurrentRdrTracks.tracks[rdx].y.data,self.CurrentRdrTracks.tracks[rdx].x.data)
             temp2=-np.degrees(np.arctan(temp1.astype(float)))
-            LocalRdrYArr.append(np.dot(temp2,(self.image.shape[1]/190)) + self.image.shape[1]/2) # Gives all Y-coord (pixels)  of all radar tracks 
+            LocalRdrYArr.append(np.dot(temp2,(self.image.shape[1]/190)) + self.image.shape[1]/2+self.HorzOffset) # Gives all Y-coord (pixels)  of all radar tracks 
         for jdx in range(n):
             radius=(self.CurrentCamTracks.tracks[jdx].width.data+self.CurrentCamTracks.tracks[jdx].height.data)/2+self.CombGateThresh
             centerY=self.CurrentCamTracks.tracks[jdx].yPx.data
@@ -470,24 +483,25 @@ class jpda_class():
                     continue
 
     def trackManager(self,SensorData):
-        # startTime=time.time()
+        # startTime01=time.time()
         self.trackMaintenance(SensorData)
-        # print('Time for Track Maint:' + str(time.time()-startTime))
-        # startTime=time.time()
+        # print('Time for Track Maint:' + str(time.time()-startTime01))
+        # startTime02=time.time()
         self.trackInitiator(SensorData)
-        # print('Time for Track Init:' + str(time.time()-startTime))
-        # startTime=time.time()
+        # print('Time for Track Init:' + str(time.time()-startTime02))
+        # startTime03=time.time()
         self.trackDestructor(SensorData)
-        # print('Time for Track Destr:' + str(time.time()-startTime))
-        # startTime=time.time()
+        # print('Time for Track Destr:' + str(time.time()-startTime03))
+        # startTime04=time.time()
         self.trackPlotter()
-        # print('Time for Track Plotter:' + str(time.time()-startTime))
+        # print('Time for Track Plotter:' + str(time.time()-startTime04))
+        # startTime05=time.time()
         if hasattr(self,'CurrentCamTracks') or hasattr(self,'CurrentRdrTracks'):
             s= '# Cam Tracks: ' + (str(len(self.CurrentCamTracks.tracks)) if hasattr(self,'CurrentCamTracks') else 'None') + \
              '; Rdr Tracks: ' + (str(len(self.CurrentRdrTracks.tracks)) if hasattr(self,'CurrentRdrTracks') else 'None') +'; # Combined Tracks:'\
             +(str(len(self.CombinedTracks.tracks)) if hasattr(self,'CombinedTracks') else 'None')
             print(s)
-       
+        # print('Time printing in track manager:' + str(time.time()-startTime05))
        
         
 
@@ -506,22 +520,6 @@ class jpda_class():
                     Yk.append([])
                 C=3 # Number of false measurements per unit volume (assume), clutter density
                 Pd=0.9 #Probability of detection
-                # # Find Nt(j) - the number of targets
-                # ValidationMat=np.zeros((len(SensorData),len(self.CurrentRdrTracks.tracks)+1),dtype=float)
-                # ValidationMat[:,0]=np.ones((len(SensorData),1))[:,0]
-                # # for idx in range(len(SensorData)): #Rows
-                # #     for jdx in range(len(SensorIndices[idx])):
-                # #         ValidationMat[idx][jdx+1]=1
-                # # Now select different permutations:
-                # seedList=np.append(np.zeros((1,len(SensorData)-1)),1)
-                # l=list(permutations(seedList.tolist())) 
-                # L=np.array(l).T
-                # print(L.shape)
-                Nt=np.zeros((len(SensorData),1))
-                # Build Nt; Nc and Ncbar are built after identifying Thetas
-                flatSensorIndices=[item for sublist in SensorIndices for item in sublist]
-                for jdx in range(len(SensorData)):
-                    Nt[jdx]=(np.count_nonzero(np.array(flatSensorIndices)==jdx))# Number of targets associated exluding false targets
 
                 # Create Clusters by cycling through SensorIndices, maintain
                 OpenList=[]
@@ -550,8 +548,6 @@ class jpda_class():
                             continue
                     # Now add this cluster to ClusterList
                     ClusterList.append(tempClusterList)
-                # print(ClusterList)
-                # print(SensorIndices)
 
                 ### Directly calculate Bjt if cluster size is 1:4 as per Bose Paper
                 # First calculate Yjt and Sjt:
@@ -563,9 +559,16 @@ class jpda_class():
                     Pk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].P)
                     Sjt[tdx]=np.matmul(np.matmul(Hk,Pk),Hk.T)+self.R_rdr
                 def PjtCalc(meas_dx,target_dx,YjtLocal,Sjt):
-                    # YjtLocal=YjtCalc(target_dx)
-                    Pjt=Pd*np.exp(-np.matmul(np.matmul(YjtLocal[:,meas_dx].T,Sjt[target_dx]),YjtLocal[:,meas_dx])/2)/(np.sqrt((2*np.pi)*np.linalg.det(Sjt[target_dx])))
+                    if  meas_dx in SensorIndices[target_dx]:
+                        Pjt=Pd*np.exp(-np.matmul(np.matmul(YjtLocal[:,meas_dx].T,Sjt[target_dx]),YjtLocal[:,meas_dx])/2)/(np.sqrt((2*np.pi)*np.linalg.det(Sjt[target_dx])))
+                    else:
+                        Pjt=0
                     return Pjt
+                def GjCal(meas_dx,target_dx1, target_dx2,YjtLocal,Sjt):
+                    Gj=PjtCalc(meas_dx,target_dx1,YjtLocal,Sjt)*PjtCalc(meas_dx,target_dx2,YjtLocal,Sjt)
+                    return Gj
+
+
                 def YjtCalc(t_idx):
                     yt=np.array([self.CurrentRdrTracks.tracks[t_idx].x.data,self.CurrentRdrTracks.tracks[t_idx].y.data, \
                         self.CurrentRdrTracks.tracks[t_idx].Vc.data]).reshape(3,1)
@@ -573,9 +576,6 @@ class jpda_class():
                     for jdx in range(len(SensorIndices[t_idx])):
                         yjt=np.array([SensorData[SensorIndices[t_idx][jdx]].pose.position.x,SensorData[SensorIndices[t_idx][jdx]].pose.position.y, \
                             np.sqrt(SensorData[SensorIndices[t_idx][jdx]].vx_comp**2+SensorData[SensorIndices[t_idx][jdx]].vy_comp**2)]).reshape(3,1)
-                        # print(yjt.shape)
-                        # print(yt.shape)
-                        # print(Yjt[:,jdx].reshape(3,1).shape)
                         Yjt[:,jdx]=(yjt-yt).reshape(3)
                     return Yjt
                 
@@ -606,25 +606,16 @@ class jpda_class():
                         Yjt2=YjtCalc(clusterItem[1])
                         
                         for jdx in range(len(SensorIndices[clusterItem[1]])):
-                            # print(jdx)
                             P2=P2+PjtCalc(jdx,clusterItem[1],Yjt2,Sjt)
                         #  Now build Bjts:
                         B0t1=P0*P2
                         c1=B0t1
                         # Calculate Bjt1:
                         Z_temp=np.zeros_like(Yjt1[:,0])
-                        # print(clusterItem)
-                        # print(SensorIndices)
-                        # print(len(SensorIndices[clusterItem[0]]))
                         for j_idx in range(len(SensorIndices[clusterItem[0]])):
-                            # print(j_idx)
-                            if SensorIndices[clusterItem[0]][j_idx] in SensorIndices[clusterItem[1]]:
-                                Bjt1=PjtCalc(j_idx,clusterItem[0],Yjt1,Sjt)*(P2-PjtCalc(j_idx,clusterItem[1],Yjt1,Sjt))
-                                c1=c1+Bjt1
+                            Bjt1=PjtCalc(j_idx,clusterItem[0],Yjt1,Sjt)*(P2-PjtCalc(j_idx,clusterItem[1],Yjt1,Sjt))
+                            c1=c1+Bjt1
                             
-                            else:
-                                Bjt1=PjtCalc(j_idx,clusterItem[0],Yjt1,Sjt)*(P2)
-                                c1=c1+Bjt1
                             Z_temp=Z_temp+Bjt1*Yjt1[:,j_idx]
                         # Add to Yk:
                         Yk[clusterItem[0]]=Z_temp/c1
@@ -633,105 +624,75 @@ class jpda_class():
                         c2=B0t2
                         Z_temp=np.zeros_like(Yjt2[:,0])
                         for j_idx in range(len(SensorIndices[clusterItem[1]])):
-                            if SensorIndices[clusterItem[1]][j_idx] in SensorIndices[clusterItem[0]]:
-                                Bjt2=PjtCalc(j_idx,clusterItem[1],Yjt2,Sjt)*(P1-PjtCalc(j_idx,clusterItem[0],Yjt2,Sjt))
-                                c2=c2+Bjt2
-                            else:
-                                Bjt2=PjtCalc(j_idx,clusterItem[1],Yjt2,Sjt)*(P1)
-                                c2=c2+Bjt2
+                            Bjt2=PjtCalc(j_idx,clusterItem[1],Yjt2,Sjt)*(P1-PjtCalc(j_idx,clusterItem[0],Yjt2,Sjt))
+                            c2=c2+Bjt2
                             Z_temp=Z_temp+Bjt2*Yjt2[:,j_idx]
                          # Add to Yk:
                         Yk[clusterItem[1]]=Z_temp/c1
+                    elif len(clusterItem)==2:
+                        # Build P's:
+                        P0=C*(1-Pd)
+                        P1=P0 
+                        P2=P0
+                        P3=P0
+                        #Build P1:
+                        Yjt1=YjtCalc(clusterItem[0])
+                        for jdx in range(len(SensorIndices[clusterItem[0]])):
+                            P1=P1+PjtCalc(jdx,clusterItem[0],Yjt1,Sjt)
+                        # Build P2:
+                        Yjt2=YjtCalc(clusterItem[1])
+                        for jdx in range(len(SensorIndices[clusterItem[1]])):
+                            P2=P2+PjtCalc(jdx,clusterItem[1],Yjt2,Sjt)
+                        # Build P3:
+                        Yjt3=YjtCalc(clusterItem[2])
+                        for jdx in range(len(SensorIndices[clusterItem[2]])):
+                            P3=P3+PjtCalc(jdx,clusterItem[2],Yjt3,Sjt)
+                        # Now Build G's:
+                        G23=0
+                        for jdx in range(len(SensorIndices[clusterItem[0]])):
+                            G23=G23+GjCal(jdx,1,2,Yjt1)
+                        G13=0
+                        for jdx in range(len(SensorIndices[clusterItem[1]])):
+                            G13=G13+GjCal(jdx,0,2,Yjt2)
+                        G12=0
+                        for jdx in range(len(SensorIndices[clusterItem[2]])):
+                            G12=G12+GjCal(jdx,0,1,Yjt3)
 
-                    else:
-                        print('LARGE CLUSTER DENSITY!!!!')
-                        pass
+                        # Now Build Bjt's:
+                        B0t1=P0*(P2*P3-G23)
+                        c1=B0t1
+                        B0t2=P0*(P1*P3-G13)
+                        c2=B0t2
+                        B0t3=P0*(P1*P2-G12)
+                        c3=B0t3
 
-
-
-
-
-                # If cluster size is greater than 4, use approximation as per paper (TODO, if required)
-
-                ############ OLD JPDA< PLACEHOLDER STUFF:###########
-
-                # for tdx in range(len(self.CurrentRdrTracks.tracks)):
-                #     # Calculate Y_jt and S_jt
-                #     # First Sjt, since it only depends on t, not j
-                #     Sjt=np.zeros((len(self.CurrentRdrTracks.tracks),3,3))
-                #     Hk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].H)
-                #     Pk=Mat_extractROS(self.CurrentRdrTracks.tracks[tdx].P)
-                #     Sjt[tdx]=np.matmul(np.matmul(Hk,Pk),Hk.T)+self.R_rdr
-                #     yt=np.array([self.CurrentRdrTracks.tracks[tdx].x.data,self.CurrentRdrTracks.tracks[tdx].y.data, \
-                #         self.CurrentRdrTracks.tracks[tdx].Vc.data]).reshape(3,1)
-                #     if len(SensorIndices[tdx])==0:
-                #         Yk=list(Yk)
-                #         Yk.append([])
-                #         continue
-                #     Yjt=np.zeros((3,len(SensorIndices[tdx])))
-                #     for jdx in range(len(SensorIndices[tdx])):
-                #         yjt=np.array([SensorData[SensorIndices[tdx][jdx]].pose.position.x,SensorData[SensorIndices[tdx][jdx]].pose.position.y, \
-                #             np.sqrt(SensorData[SensorIndices[tdx][jdx]].vx_comp**2+SensorData[SensorIndices[tdx][jdx]].vy_comp**2)]).reshape(3,1)
-                #         # print(yjt.shape)
-                #         # print(yt.shape)
-                #         # print(Yjt[:,jdx].reshape(3,1).shape)
-                #         Yjt[:,jdx]=(yjt-yt).reshape(3)
-                #     if len(SensorIndices[tdx])==1: # There's only one measurement in gate, it is either for target or for clutter
-                #         # So event matrix is either [0,1] or [1,0] - only two possibilities
-                #         phi= np.array([0,1])
-                #         P=np.zeros_like(phi) #P_theta
-                #         # Build Nc, Ncbar
-                #         Nc=np.zeros_like(phi)
-                #         Ncbar=np.zeros_like(phi)
-                #         Nc[0]=1
-                #         Ncbar[0]=0
-                #         Nc[1]=0
-                #         Ncbar[1]=1
-                #         # Last two product terms, PD^t and [1-PD^t] 
-                #         Prod1=1
-                #         Prod2=1
-                #         Prod3=1 # Main product term, with distribution
-                #         c=0 # Normalization constant for Prod3
-                #         for phi_dx in range(len(phi)):
-                #             if Nc[phi_dx]==0:
-                #                 Prod1=1
-                #             if Ncbar[phi_dx]==0:
-                #                 Prod2=0
-                #             else:
-                #                 for jjdx in range(1,Nc[phi_dx]+1):
-                #                     Prod1=Prod1*(Pd**jjdx)
-                #                 for jbar_dx in range(1,Ncbar[phi_dx]+1):
-                #                     Prod2=Prod2*(1-Pd**jbar_dx)
-                #             # for nt_jdx in range(len(SensorData)):
-                #             # There's only one observation in this case, so no need loop for Prod3:
-                #             Prod3=np.exp(-np.matmul(np.matmul(Yjt[:,0].T,Sjt[tdx]),Yjt[:,0])/2)/(np.sqrt((2*np.pi)*np.linalg.det(Sjt[tdx])))
-                #             c=c+Prod3
-                #             P[phi_dx] =C**phi[phi_dx]*Prod3*Prod2*Prod1
-                #         P=P/c # Normalize
-                #         Beta=P[0] 
-                #         Yk.append(Beta*Yjt[:,0])  # Z(t) in slides
-                #     else:
-                #         Yk.append([]) # TODO: TEMP SOLUTION
-                #         pass #TODO: code for generic theta (event matrix) case
-                       
-
+                        Z_temp=np.zeros_like(Yjt1[:,0])
+                        for j_idx in range(len(SensorIndices[clusterItem[0]])):
+                            Bjt1=PjtCalc(j_idx,0,Yjt1,Sjt)*((P2-PjtCalc(j_idx,1,Yjt2,Sjt))*(P3-PjtCalc(meas_dx,2,Yjt3,Sjt))\
+                                -(G23-GjCal(j_idx,1,2,Yjt1,Sjt)))
+                            c1=c1+Bjt1
+                            Z_temp=Z_temp+Bjt1*Yjt1[:,j_idx]
+                        Yk[clusterItem[0]]=Z_temp/c1
+                        Z_temp=np.zeros_like(Yjt2[:,0])
+                        for j_idx in range(len(SensorIndices[clusterItem[0]])):
+                            Bjt2=PjtCalc(j_idx,1,Yjt2,Sjt)*((P1-PjtCalc(j_idx,0,Yjt1,Sjt))*(P3-PjtCalc(meas_dx,2,Yjt3,Sjt))\
+                                -(G13-GjCal(j_idx,0,2,Yjt2,Sjt)))
+                            c2=c2+Bjt2
+                            Z_temp=Z_temp+Bjt2*Yjt2[:,j_idx]
+                        Yk[clusterItem[1]]=Z_temp/c2
+                        Z_temp=np.zeros_like(Yjt3[:,0])
+                        for j_idx in range(len(SensorIndices[clusterItem[0]])):
+                            Bjt3=PjtCalc(j_idx,2,Yjt3,Sjt)*((P1-PjtCalc(j_idx,0,Yjt1,Sjt))*(P2-PjtCalc(meas_dx,1,Yjt2,Sjt))\
+                                -(G12-GjCal(j_idx,0,1,Yjt3,Sjt)))
+                            c3=c3+Bjt3
+                            Z_temp=Z_temp+Bjt3*Yjt3[:,j_idx]
+                        Yk[clusterItem[2]]=Z_temp/c3
                     
-                # Create Event Matrices
-                # For this, need to group all validation matrices
-
-
-                # Nt=np.empty([len(SensorData),1])
-                # print(Nt)
-                # for jdx in range(len(SensorData)):
-                #     Nt[jdx]=SensorIndices.count(jdx)
-                # print(Nt)
-                # if (Nt==0).all():
-                #     Yk=[]
-                # else:
-                #     pass
-
-
-
+                    # If cluster size is greater than 4, use approximation as per paper (TODO, if required)
+                    else:
+                        print('Large Cluster Density, Skipping Data Association!!')
+                        pass
+                
 
             return Yk
 
@@ -870,9 +831,11 @@ class jpda_class():
 
 
         elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ): # Use EKF from Truck Platooning paper:
+            # DatAscTime=time.time()
             Yk=self.DataAssociation(SensorData,SensorIndices,Method) # Lists suitable measurements for each track
+            # print('Time for Data Assoc:' + str(time.time()-DatAscTime))
             for idx in range(len(Yk)):
-                if len(Yk[idx])==0: # No suitable measurements found, move to potential destruct
+                if ((Method=='JPDA') and len(Yk[idx])==0) or ((Method=='Greedy') and (Yk[idx]==[])): # No suitable measurements found, move to potential destruct
                     if  self.CurrentRdrTracks.tracks[idx].Stat.data>=10:
                          self.CurrentRdrTracks.tracks[idx].Stat.data+=1
                     else:
@@ -1005,7 +968,7 @@ class jpda_class():
 
     def RdrMsrmtsMKZ(self,data): 
         #Build SensorData
-        # startTime=time.time()
+        # startTimemst=time.time()
         self.RdrReadings=[]
         
         for idx in range(len(data.objects)):
@@ -1020,8 +983,10 @@ class jpda_class():
             self.RdrReadings[-1].id=data.objects[idx].id
             
         self.RdrReadings=np.asarray(self.RdrReadings)
-        # print('Time for RdrMsrmts:' + str(time.time()-startTime))
+        # print('Time for RdrMsrmts:' + str(time.time()-startTimemst))
+        # startTimeMgr=time.time()
         self.trackManager(self.RdrReadings)
+        # print('Total Time for Manager:' + str(time.time()-startTimeMgr))
 
 
 if __name__=='__main__':
