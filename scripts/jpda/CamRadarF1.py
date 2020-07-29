@@ -93,7 +93,7 @@ class jpda_class():
                 
                 # startTime=time.time()
                 try:
-                    self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes,timeout=0.06))
+                    self.CamMsrmts(rospy.wait_for_message('/darknet_ros/bounding_boxes', BoundingBoxes))
                 except:
                     rospy.loginfo('No Camera Data/Bounding Boxes found')
                     # pass
