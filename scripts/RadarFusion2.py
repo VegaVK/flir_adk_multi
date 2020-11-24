@@ -88,8 +88,13 @@ class radar_img:
         n=len(self.RadarTracks)
         self.RadarAnglesH=np.zeros((n,1))
         self.RadarAnglesV=np.zeros((n,1))
+        self.MovingObjStatus=np.zeros((n,1)) # To check if object is moving or not
         # Camera Coordinates: X is horizontal, Y is vertical starting from left top corner
-        for idx in range(n):
+        for idx in range(len(self.RadarTracks)):
+            if np.sqrt((self.RadarTracks[idx]['RadarAccelX'])**2 + (self.RadarTracks[idx]['RadarAccelY'])**2)>=0.05:
+                self.MovingObjStatus[idx]=1
+            else:
+                self.MovingObjStatus[idx]=0
             self.RadarAnglesH[idx]=-np.degrees(np.arctan(np.divide(self.RadarTracks[idx]['RadarY'],self.RadarTracks[idx]['RadarX'])))
             self.RadarAnglesV[idx]=np.abs(np.degrees(np.arctan(np.divide(self.RadarTracks[idx]['RadarZ'],self.RadarTracks[idx]['RadarX'])))) #will always be negative, so correct for it
         self.CameraX=self.RadarAnglesH*(self.RawImage.shape[1]/self.H_FOV) + self.RawImage.shape[1]/2 +self.HorzOffset# Number of pixels per degree,adjusted for shifting origin from centerline to top left
@@ -101,9 +106,12 @@ class radar_img:
         imageTemp=cv2.cvtColor(imageTemp,cv2.COLOR_GRAY2RGB)
         for idx in range(len(self.RadarAnglesH)):
             if (self.CameraX[idx]<=self.RawImage.shape[1]):
-                cv2.circle(imageTemp, (int(self.CameraX[idx]),int(self.CameraY[idx])), 10, (255,105,180),3)
+                if self.MovingObjStatus[idx]==1:
+                    cv2.circle(imageTemp, (int(self.CameraX[idx]),int(self.CameraY[idx])), 10, (255,105,180),3)
                 # print(str(self.RadarTracks[idx]['id'][0]))
-                cv2.putText(imageTemp,str(self.RadarTracks[idx]['id'][0]),(self.CameraX[idx],self.CameraY[idx]),self.font,1,(255,105,180),2)
+                    cv2.putText(imageTemp,str(self.RadarTracks[idx]['id'][0]),(self.CameraX[idx],self.CameraY[idx]),self.font,1,(255,105,180),2)
+                else:
+                    cv2.circle(imageTemp, (int(self.CameraX[idx]),int(self.CameraY[idx])), 10, (255,255,102),3)
 
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(imageTemp, "rgb8"))
 
