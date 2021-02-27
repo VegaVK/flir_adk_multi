@@ -64,7 +64,8 @@ def diagnostic_listener():
         try:
             data=rospy.wait_for_message('/zed/zed_node/rgb/image_rect_color/compressed', CompressedImage, timeout=2)
         except:
-            rospy.logerr("ZED Not publishing new messages")
+            # rospy.logerr("ZED Not publishing new messages")
+            pass
 
 
                        

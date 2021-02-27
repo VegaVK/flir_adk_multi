@@ -27,7 +27,7 @@ def ping(host):
     return subprocess.call(command) == 0
 
 def main():
-    host='1.1.1.1'
+    host='192.168.100.3'
     rospy.init_node('dsrcTest', anonymous=True)
     pingPub = rospy.Publisher("ping_mov_avg",std_msgs.msg.Float32 ,queue_size=100)
     r = rospy.Rate(10) # 10hz
