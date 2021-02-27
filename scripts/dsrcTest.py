@@ -22,7 +22,7 @@ def ping(host):
     param = '-n' if platform.system().lower()=='windows' else '-c'
 
     # Building the command. Ex: "ping -c 1 google.com"
-    command = ['ping', param, '1', host]
+    command = ['ping', param, '1', '-w', '300', host]
 
     return subprocess.call(command) == 0
 
@@ -32,17 +32,19 @@ def main():
     pingPub = rospy.Publisher("ping_mov_avg",std_msgs.msg.Float32 ,queue_size=100)
     r = rospy.Rate(10) # 10hz
     pingBuffer=[]
+    pingfile=open('pingTestFile.txt','a')
     while not rospy.is_shutdown():
         pingOut=ping(host)
-        if len(pingBuffer)<10:
+        pingfile.write(str(int(pingOut)) + '\n')
+        if len(pingBuffer)<20:
             pingBuffer.append(pingOut)
         else:
             pingBuffer.pop(0)
             pingBuffer.append(pingOut)
-        movingAverage=np.mean(pingBuffer)*10.0
+        movingAverage=np.mean(pingBuffer)*100.0
         pingPub.publish(movingAverage)
         r.sleep()
-
+    pingfile.close()
 if __name__=='__main__':
     main()
 #######################
