@@ -53,18 +53,18 @@ class jpda_class():
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
         self.YoloClassList=[0,1,2] # For Yolov3_flir
         self.GateThreshRdr =1# Scaling factor, threshold for gating
-        self.GateThreshCam=5# TODO: adjust?
+        self.GateThreshCam=15# TODO: adjust?
         self.trackInitRdrThresh=0.3 # For track initiation
-        self.trackInitCamThresh=5 # Radius of 15 pixels allowed
-        self.CombGateThresh=20# in pixels (added to radius buffer)
+        self.trackInitCamThresh=15 # Radius of 15 pixels allowed
+        self.CombGateThresh=15# in pixels (added to radius buffer)
         self.bridge=CvBridge()
         self.font=cv2.FONT_HERSHEY_SIMPLEX 
         # Initializing parameters:
         self.Q_rdr=np.array([[10,0,0,0],[0,10,0,0],[0,0,5,0],[0,0,0,1]])
         self.R_rdr=np.array([[3,0,0],[0,3,0],[0,0,3]])
         # self.Q_cam=np.diag([10,10,15,15,10,10,15,15])
-        self.Q_cam=np.diag([5,5,10,10,10,10,20,20])
-        self.R_cam=np.array([[5,0,0,0],[0,5,0,0],[0,0,5,0],[0,0,0,5]])
+        self.Q_cam=np.diag([10,10,10,10,10,10,20,20])
+        self.R_cam=np.array([[10,0,0,0],[0,10,0,0],[0,0,5,0],[0,0,0,5]])
         self.CamMsrtmMatrixH=np.array([[1,0,0,0,0,0,0,0],[0,1,0,0,0,0,0,0],\
             [0,0,1,0,0,0,0,0],[0,0,0,1,0,0,0,0]]) # Only positions and w/h are measured)
         self.Vt=0.0
