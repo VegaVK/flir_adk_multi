@@ -85,11 +85,13 @@ class jpda_class():
             rospy.Subscriber('/imu', Imu, self.Odom3NuSc)
             rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsNuSc)
         elif DataSetType=="MKZ":
+            self.CamFOV=190.0
             rospy.Subscriber('/Thermal_Panorama', Image, self.buildImage)
             rospy.Subscriber('/imu/data', Imu, self.Odom2MKZ) # TODO: fix after IMU is available
             rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
             rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes,self.BBoxBuilder)
         elif DataSetType=="matlab":
+            self.CamFOV=50
             rospy.Subscriber('/camera', Image, self.buildImage)
             rospy.Subscriber('/imu/data', Imu, self.Odom2MKZ) # TODO: fix after IMU is available
             rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
@@ -437,7 +439,7 @@ class jpda_class():
                     CirClr.append(np.array([255,0,0]))
                 else: # Candidate for Destructor-orange
                     CirClr.append(np.array([0,165,255])) 
-            CameraX=np.dot(RadarAnglesH,(self.image.shape[1]/190)) + self.image.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+            CameraX=np.dot(RadarAnglesH,(self.image.shape[1]/self.CamFOV)) + self.image.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
             CameraY=np.dot(RadarAnglesV,(self.image.shape[0]/39.375)) +512/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
             CirClr=np.array(CirClr)
             CameraX=np.array(CameraX)
@@ -487,7 +489,7 @@ class jpda_class():
         for rdx in range(len(self.CurrentRdrTracks.tracks)):
             temp1=np.divide(self.CurrentRdrTracks.tracks[rdx].y.data,self.CurrentRdrTracks.tracks[rdx].x.data)
             temp2=-np.degrees(np.arctan(temp1.astype(float)))
-            LocalRdrYArr.append(np.dot(temp2,(self.image.shape[1]/190)) + self.image.shape[1]/2+self.HorzOffset) # Gives all Y-coord (pixels)  of all radar tracks 
+            LocalRdrYArr.append(np.dot(temp2,(self.image.shape[1]/self.CamFOV)) + self.image.shape[1]/2+self.HorzOffset) # Gives all Y-coord (pixels)  of all radar tracks 
         for jdx in range(n):
             radius=(self.CurrentCamTracks.tracks[jdx].width.data+self.CurrentCamTracks.tracks[jdx].height.data)/2+self.CombGateThresh
             centerY=self.CurrentCamTracks.tracks[jdx].yPx.data
