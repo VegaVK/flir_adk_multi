@@ -25,6 +25,8 @@ add_message_files(
   trackArrayRdr.msg
   trackCam.msg
   trackArrayCam.msg
+  groundTruth.msg
+  groundTruthArray.msg
 )
 
 generate_messages(
