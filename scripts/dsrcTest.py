@@ -37,15 +37,26 @@ def main():
 
     r = rospy.Rate(10) # 10hz
     while not rospy.is_shutdown():
-        pingDelay = subprocess.Popen(["ping", "-c", "1", host],stdout = subprocess.PIPE,stderr = subprocess.PIPE)
-        out, error_ping = pingDelay.communicate()
-        pingVal=ping(host)
-        
-        pingPub.publish(float(pingVal))
-        matcher = re.compile("time=(\d+.\d+) ms")
-        latency=float(matcher.search(out, re.MULTILINE).groups() [0])
-        # print(latency)
-        latencyPub.publish(latency)
+        pingStatus=ping(host)
+        if pingStatus==1.0:
+            pingPub.publish(float(pingStatus))
+            pingDelay = subprocess.Popen(["ping", "-c", "1", "-w", "100" ,host],stdout = subprocess.PIPE, stderr=subprocess.PIPE)
+            out = str(pingDelay.communicate())
+            # print(out)
+            matcher = re.compile("time=(\d+.\d+) ms")
+            latency=[]
+            try:
+                matcherOutput=(matcher.search(out, re.MULTILINE).groups())
+                latency=float(matcherOutput[0])
+            # print(latency)
+            # TODO: CODE IS BROKEN - doesnt publish zero ping_status when connection is broken.....
+            except:
+                rospy.loginfo_once('Lost Connection Midway')
+            if latency!=[]:
+                latencyPub.publish(latency)
+        else:
+            pingPub.publish(float(pingStatus))
+            rospy.loginfo('Lost Connection')
         r.sleep()
 if __name__=='__main__':
     main()
