@@ -440,7 +440,7 @@ class jpda_class():
                 else: # Candidate for Destructor-orange
                     CirClr.append(np.array([0,165,255])) 
             CameraX=np.dot(RadarAnglesH,(self.image.shape[1]/self.CamFOV)) + self.image.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
-            CameraY=np.dot(RadarAnglesV,(self.image.shape[0]/39.375)) +512/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+            CameraY=np.dot(RadarAnglesV,(self.image.shape[0]/(39.375))) +480/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
             CirClr=np.array(CirClr)
             CameraX=np.array(CameraX)
             for idx3 in range(len(CameraX)):

@@ -6,6 +6,9 @@ import sys
 import os
 import platform    # For getting the operating system name
 import subprocess  # For executing a shell command
+import re
+
+
 
 
 # host= ['1.1.1.1']
@@ -29,22 +32,21 @@ def ping(host):
 def main():
     host='1.1.1.1'
     rospy.init_node('dsrcTest', anonymous=True)
-    pingPub = rospy.Publisher("ping_mov_avg",std_msgs.msg.Float32 ,queue_size=100)
+    pingPub = rospy.Publisher("ping_status",std_msgs.msg.Float32 ,queue_size=100)
+    latencyPub = rospy.Publisher("ping_ms",std_msgs.msg.Float32 ,queue_size=100)
+
     r = rospy.Rate(10) # 10hz
-    pingBuffer=[]
-    pingfile=open('pingTestFile.txt','a')
     while not rospy.is_shutdown():
-        pingOut=ping(host)
-        pingfile.write(str(int(pingOut)) + '\n')
-        if len(pingBuffer)<20:
-            pingBuffer.append(pingOut)
-        else:
-            pingBuffer.pop(0)
-            pingBuffer.append(pingOut)
-        movingAverage=np.mean(pingBuffer)*100.0
-        pingPub.publish(movingAverage)
+        pingDelay = subprocess.Popen(["ping", "-c", "1", host],stdout = subprocess.PIPE,stderr = subprocess.PIPE)
+        out, error_ping = pingDelay.communicate()
+        pingVal=ping(host)
+        
+        pingPub.publish(float(pingVal))
+        matcher = re.compile("time=(\d+.\d+) ms")
+        latency=float(matcher.search(out, re.MULTILINE).groups() [0])
+        # print(latency)
+        latencyPub.publish(latency)
         r.sleep()
-    pingfile.close()
 if __name__=='__main__':
     main()
 #######################
