@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../Unreal/AirSim/PythonClient"
+		}
+	],
+	"settings": {
+		"python.autoComplete.extraPaths": [
+			"/home/vamsi/catkin_ws/devel/lib/python2.7/dist-packages",
+			"/opt/ros/melodic/lib/python2.7/dist-packages"
+		]
+	}
+}
