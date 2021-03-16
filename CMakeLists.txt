@@ -27,6 +27,8 @@ add_message_files(
   trackArrayCam.msg
   groundTruth.msg
   groundTruthArray.msg
+  pingLatency.msg
+  pingStatus.msg
 )
 
 generate_messages(
