@@ -5,7 +5,8 @@
   <include file="$(find delphi_esr)/launch/delphi_esr_car.launch"/>
   <!-- <include file="$(find pointgrey_camera_driver)/launch/camera.launch"/> -->
   <include file="$(find xsens_mti_driver)/launch/xsens_mti_node.launch"/>
-
+<!-- Diagnostics: -->
+<!-- <node name="Diagnostics_observer" pkg="flir_adk_multi" type="diagnostics.py" output="screen"></node> -->
 
 <!-- Panorama Stitching -->
  
