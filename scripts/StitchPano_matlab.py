@@ -109,7 +109,7 @@ class vid_stitch:
         # SmoothingArray4_5=cv2.cvtColor(SmoothingArray4_5, cv2.COLOR_GRAY2RGB)
         # SmoothingArray4_5=cv2.convertScaleAbs(SmoothingArray4_5, cv2.CV_8UC3, 1, 0)
         # SmoothingArray4_5=cv2.cvtColor(SmoothingArray4_5,cv2.COLOR_GRAY2RGB)   
-        print(SmoothingArray4_5.shape)
+        # print(SmoothingArray4_5.shape)
         # self.Panorama=np.hstack(SmoothingArray4_5)
         self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "rgb8"))
         # self.TempWarpPub.publish(self.bridge.cv2_to_imgmsg(self.Warped1_2, "mono8"))
