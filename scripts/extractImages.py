@@ -27,18 +27,24 @@ class image_extractor:
     ## FOR EACH IMAGE:
     # def extract(self,data):
     #     imageFromBag=self.bridge.imgmsg_to_cv2(data, "mono8")
+    #     # imageRGB = cv2.cvtColor(imageFromBag,cv2.COLOR_GRAY2RGB)
     #     # The export path is hardcoded:
     #     print(self.fileCounter)
-    #     cv2.imwrite('/home/vamsi/RainDataTrain/bag13/'+str(self.fileCounter)+'.jpeg',imageFromBag)
+    #     fileNumStr=str(self.fileCounter)
+    #     fileNumStr=fileNumStr.zfill(5)
+    #     cv2.imwrite('/home/vamsi/RainDataTrain/bag13/'+fileNumStr+'.jpeg',imageFromBag)
     #     self.fileCounter=self.fileCounter+1
     
     ## FOR ALTERNATE IMAGES:
     def extract(self,data):
         imageFromBag=self.bridge.imgmsg_to_cv2(data, "mono8")
+        # imageRGB = cv2.cvtColor(imageFromBag,cv2.COLOR_GRAY2RGB)
         # The export path is hardcoded:
         if  (self.fileCounter % 2) == 0:
             print(self.fileCounter)
-            cv2.imwrite('/home/vamsi/RainDataTrain/bag11/'+str(self.fileCounter)+'.jpeg',imageFromBag)
+            fileNumStr=str(self.fileCounter)
+            fileNumStr=fileNumStr.zfill(5)
+            cv2.imwrite('/home/vamsi/RainDataTrain/bag11/'+fileNumStr+'.jpeg',imageFromBag)
             self.fileCounter=self.fileCounter+1
         else:
             self.fileCounter=self.fileCounter+1
