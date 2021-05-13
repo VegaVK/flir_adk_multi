@@ -111,11 +111,24 @@ class vid_stitch:
         # SmoothingArray4_5=cv2.cvtColor(SmoothingArray4_5,cv2.COLOR_GRAY2RGB)   
         # print(SmoothingArray4_5.shape)
         # self.Panorama=np.hstack(SmoothingArray4_5)
+<<<<<<< HEAD
         self.Panorama=cv2.cvtColor(self.Panorama,cv2.COLOR_RGB2GRAY)  
         self.Panorama=cv2.cvtColor(self.Panorama,cv2.COLOR_GRAY2RGB)
         self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "rgb8"))
         # self.Panorama=cv2.cvtColor(self.Panorama,cv2.COLOR_RGB2GRAY)  
         # self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "rgb8"))
+=======
+<<<<<<< HEAD
+        # self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "rgb8"))
+        pano_gray=cv2.cvtColor(self.Panorama,cv2.COLOR_BGR2GRAY)
+        self.PanoPub.publish(self.bridge.cv2_to_imgmsg(pano_gray, "mono8"))
+=======
+        # self.Panorama=cv2.cvtColor(self.Panorama,cv2.COLOR_RGB2GRAY)  
+        # self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "mono8"))
+        # self.Panorama=cv2.cvtColor(self.Panorama,cv2.COLOR_RGB2GRAY)  
+        self.PanoPub.publish(self.bridge.cv2_to_imgmsg(self.Panorama, "rgb8"))
+>>>>>>> c696175865c5a44bbdf35ae952d642586dfb5b80
+>>>>>>> 31aa1b02e64c4426549d144f910b856405ade031
         # self.TempWarpPub.publish(self.bridge.cv2_to_imgmsg(self.Warped1_2, "mono8"))
         rospy.loginfo('Published Panorama')
 
