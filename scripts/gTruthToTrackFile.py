@@ -1,5 +1,8 @@
 #!/usr/bin/env python
-
+# Uses exact position of car to get better bounding boxes. Still, published ground truth topic in ROS bag file does not have heading of each vehicle (limitation of Driving Scenario Vision detector block in Simulink), so
+# cannot get the width of BB correctly, only height (then assume height=width.)
+# TODO: Change all cars in Sim to same car model (Unreal SUV)
+# TODO: Check why incoming vehicles are not published in ROS topic
 import rospy
 import numpy as np
 from cv_bridge import CvBridge, CvBridgeError
@@ -25,25 +28,28 @@ class gTruth:
 
     def __init__(self):
         self.bridge=CvBridge()
-        self.image_pub = rospy.Publisher("radar_image",Image,queue_size=100)
+        self.image_pub = rospy.Publisher("groundTruthImage",Image,queue_size=100)
         # Caliberation: Roughly measured in car.
         rospy.Subscriber("/as_tx/cam_ground_truth_objects/",ObjectWithCovarianceArray, self.createTracks)
         rospy.Subscriber('/Thermal_Panorama', Image, self.image)
         filePathPrefix=str("/home/vamsi/Tracking/py-motmetrics/motmetrics/data/seq1/gt/")
         self.delta_x = 0
         self.delta_y = 0 # Assuming that the radar and camera are on same centerline
-        self.delta_z = 1.0414/2
+        self.delta_z = 1.1 # From Ego vehicle to Camera Frame
         self.H_FOV=190
         self.V_FOV=41 #Calculated based on aspect ratio
-        self.HorzOffset=0 # Manual horizontal (Y-direction) offset for radar in pixels
-        self.VertOffset=-30 # Manual vertical (Z-direction) offset for radar in pixels
+        self.HorzOffsetGain=2.5 # Manual horizontal (Y-direction) offset GAIN (changes with position) for radar in pixels
+        self.BBWidthGain = 2.5 # Heuristic gain  to adjust bounding box width
+        self.VertOffset=0 # Manual vertical (Z-direction) offset for radar in pixels
         self.DestF=open((filePathPrefix+'gt'+'.txt'),"w")
         self.ImageExists=0
-        self.BBheight=90
-        self.BBWidth=90 # For now, static
+        self.CarMeshW=2.2 # Assume same for all cars
+        self.CarMeshH=1.8
+        # self.BBheight=90
+        # self.BBWidth=90 # For now, static
         self.FrameInit=1
         self.tracks=ObjectWithCovarianceArray()
-        #-self.RadarTracks[idx]['RadarX']*np.sin(np.radians(4)) 
+        #-self.RadarTracks[idx]['EgoMeasX']*np.sin(np.radians(4)) 
         
 
 
@@ -62,44 +68,48 @@ class gTruth:
         # n=len(self.RadarTracks)
         frame=self.FrameInit
         self.FrameInit+=1
-        print(frame)
-        RadarAnglesH=0.0
-        RadarAnglesV=0.0
+        # print(frame)
+        CameraAnglesH=0.0
+        CameraAnglesV=0.0
         for idx in range(len(data.objects)):
+            
             if (data.objects[idx].pose.pose.position.x==0.0) and (data.objects[idx].pose.pose.position.y==0.0) and (data.objects[idx].pose.covariance[0]==0.0):
                 continue #Zero entry, so skip it
             else: #write to file
+                print(idx)
                 # <frame>, <id>, <bb_left>, <bb_top>, <bb_width>, <bb_height>, <conf>, <x>, <y>, <z>
                 
                 id=int(data.objects[idx].id)
-                RadarX=data.objects[idx].pose.pose.position.x+self.delta_x
-                RadarY=data.objects[idx].pose.pose.position.y
-                RadarZ=0.0+self.delta_z
-                RadarAnglesH=-np.degrees(np.arctan(np.divide(RadarY,RadarX)))
-                RadarAnglesV=np.abs(np.degrees(np.arctan(np.divide(RadarZ,RadarX)))) #will always be negative, so correct for it
+                EgoMeasX=data.objects[idx].pose.pose.position.x+self.delta_x
+                EgoMeasY=data.objects[idx].pose.pose.position.y
+                EgoMeasZ=0.0-self.delta_z/2
+                CameraAnglesH=-np.degrees(np.arctan(np.divide(EgoMeasY,EgoMeasX))) #will always be negative, so correct for it
+                CameraAnglesV=-np.abs(np.degrees(np.arctan(np.divide(EgoMeasZ,EgoMeasX))))
                 
 
                 
                 if self.ImageExists==1:
                     imageTemp = self.RawImage
                     # print(imageTemp.shape)
-                    CameraX=RadarAnglesH*(self.RawImage.shape[1]/self.H_FOV) + self.RawImage.shape[1]/2 +self.HorzOffset# Number of pixels per degree,adjusted for shifting origin from centerline to top left
-                    CameraY=RadarAnglesV*(self.RawImage.shape[0]/self.V_FOV) +256 +self.VertOffset -RadarX*np.sin(np.radians(4)) # Number of pixels per degree,adjusted for shifting origin from centerline to top left
-    
+                    CameraX=CameraAnglesH*(self.RawImage.shape[1]/self.H_FOV) + self.RawImage.shape[1]/2 +self.HorzOffsetGain*CameraAnglesH# Number of pixels per degree,adjusted for shifting origin from centerline to top left
+                    # CameraY=CameraAnglesV*(self.RawImage.shape[0]/self.V_FOV) +256 +self.VertOffset -EgoMeasX*np.sin(np.radians(4)) # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+                    CameraY=CameraAnglesV*(self.RawImage.shape[0]/self.V_FOV) +256 +self.VertOffset
+                    BBHeight=-np.degrees(np.arctan(np.divide(self.CarMeshH,EgoMeasX)))*(self.RawImage.shape[0]/self.V_FOV) 
+                    BBWidth=np.degrees(np.arctan(np.divide(self.CarMeshW/2.0,EgoMeasX)))*2.0*(self.RawImage.shape[0]/self.V_FOV) +abs(self.BBWidthGain*CameraAnglesH)# Since heading info is not available, assume =0 and use heuristic
                     # imageTemp=cv2.cvtColor(imageTemp,cv2.COLOR_GRAY2RGB)
                    
                     if (CameraX<=self.RawImage.shape[1]):
-                        start=(int(CameraX-self.BBWidth/2), int(CameraY-self.BBheight/2))
-                        end= (int(CameraX+self.BBWidth/2), int(CameraY+self.BBheight/2))
+                        start=(int(CameraX-BBWidth/2), int(CameraY-BBHeight/2))
+                        end= (int(CameraX+BBWidth/2), int(CameraY+BBHeight/2))
                         imageTemp=cv2.rectangle(imageTemp,start,end,(0,0,255),2)
-                        cv2.circle(imageTemp, (int(CameraX),int(CameraY)), 10, (255,255,102),3)
+                        # cv2.circle(imageTemp, (int(CameraX),int(CameraY)), 10, (255,255,102),3)
                         self.image_pub.publish(self.bridge.cv2_to_imgmsg(imageTemp, "rgb8"))
                     
                     #Write to File
                     bb_left=int(CameraX)
                     bb_top=int(CameraY)
-                    bb_width=int(self.BBWidth)
-                    bb_height=int(self.BBheight)
+                    bb_width=int(BBWidth)
+                    bb_height=int(BBHeight)
                     x=-1 # Fillers
                     y=-1
                     z=-1
@@ -110,41 +120,6 @@ class gTruth:
                     
 
                 
-
-
-                
-        #     self.RdrReadings=np.append(self.RdrReadings,RadarObjMKZ())
-        #     self.RdrReadings[-1].pose=data.objects[idx].pose.pose
-        #     self.RdrReadings[-1].vx=data.objects[idx].twist.twist.linear.x
-        #     self.RdrReadings[-1].vy=data.objects[idx].twist.twist.linear.y
-        #     self.RdrReadings[-1].vx_comp=self.velX+data.objects[idx].twist.twist.linear.x
-        #     self.RdrReadings[-1].vy_comp=self.velY+data.objects[idx].twist.twist.linear.y
-        #     self.RdrReadings[-1].header=data.objects[idx].header
-        #     self.RdrReadings[-1].id=data.objects[idx].id
-            
-        # self.RdrReadings=np.asarray(self.RdrReadings)
-
-
-
-
-
-        # self.RadarTracks=np.zeros((n,1),dtype=[('id', np.uint16),('RadarX', np.float64),('RadarY', np.float64),('RadarZ', np.float64),('RadarVelX', np.float64),('RadarVelY', np.float64),('RadarAccelX', np.float64),('RadarAccelY', np.float64)])
-        # for idx in range(n):
-        #     self.RadarTracks[idx]['id']= data.tracks[idx].track_id
-        #     self.RadarTracks[idx]['RadarX'] = data.tracks[idx].track_shape.points[1].x+self.delta_x
-        #     self.RadarTracks[idx]['RadarY'] = (data.tracks[idx].track_shape.points[1].y+data.tracks[idx].track_shape.points[2].y)/2
-        #     self.RadarTracks[idx]['RadarZ'] = data.tracks[idx].track_shape.points[1].z-self.delta_z
-        #     self.RadarTracks[idx]['RadarVelX'] = data.tracks[idx].linear_velocity.x
-        #     self.RadarTracks[idx]['RadarVelY'] = data.tracks[idx].linear_velocity.y
-        #     self.RadarTracks[idx]['RadarAccelX']=data.tracks[idx].linear_acceleration.x
-        #     self.RadarTracks[idx]['RadarAccelY']=data.tracks[idx].linear_acceleration.y
-        # DelIndexArray=[]
-        # for jdx in range(n):
-        #     # print(jdx)
-        #     if abs(self.RadarTracks[idx]['RadarAccelX'])<=0.05:
-        #         DelIndexArray.append(int(jdx))
-        # # IF we want to delete:
-        # # self.RadarTracks=np.delete(self.RadarTracks,DelIndexArray)
 
 
 
@@ -161,8 +136,8 @@ class gTruth:
     # def plotter(self):
     #     imageTemp = self.RawImage
     #     n=len(self.RadarTracks)
-    #     self.RadarAnglesH=np.zeros((n,1))
-    #     self.RadarAnglesV=np.zeros((n,1))
+    #     self.CameraAnglesH=np.zeros((n,1))
+    #     self.CameraAnglesV=np.zeros((n,1))
     #     self.MovingObjStatus=np.zeros((n,1)) # To check if object is moving or not
     #     # Camera Coordinates: X is horizontal, Y is vertical starting from left top corner
     #     for idx in range(len(self.RadarTracks)):
@@ -170,16 +145,16 @@ class gTruth:
     #             self.MovingObjStatus[idx]=1
     #         else:
     #             self.MovingObjStatus[idx]=0
-    #         self.RadarAnglesH[idx]=-np.degrees(np.arctan(np.divide(self.RadarTracks[idx]['RadarY'],self.RadarTracks[idx]['RadarX'])))
-    #         self.RadarAnglesV[idx]=np.abs(np.degrees(np.arctan(np.divide(self.RadarTracks[idx]['RadarZ'],self.RadarTracks[idx]['RadarX'])))) #will always be negative, so correct for it
-    #     self.CameraX=self.RadarAnglesH*(self.RawImage.shape[1]/self.H_FOV) + self.RawImage.shape[1]/2 +self.HorzOffset# Number of pixels per degree,adjusted for shifting origin from centerline to top left
-    #     self.CameraY=self.RadarAnglesV*(self.RawImage.shape[0]/self.V_FOV) +256 +self.VertOffset -self.RadarTracks[idx]['RadarX']*np.sin(np.radians(4)) # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+    #         self.CameraAnglesH[idx]=-np.degrees(np.arctan(np.divide(self.RadarTracks[idx]['EgoMeasY'],self.RadarTracks[idx]['EgoMeasX'])))
+    #         self.CameraAnglesV[idx]=np.abs(np.degrees(np.arctan(np.divide(self.RadarTracks[idx]['EgoMeasZ'],self.RadarTracks[idx]['EgoMeasX'])))) #will always be negative, so correct for it
+    #     self.CameraX=self.CameraAnglesH*(self.RawImage.shape[1]/self.H_FOV) + self.RawImage.shape[1]/2 +self.HorzOffset# Number of pixels per degree,adjusted for shifting origin from centerline to top left
+    #     self.CameraY=self.CameraAnglesV*(self.RawImage.shape[0]/self.V_FOV) +256 +self.VertOffset -self.RadarTracks[idx]['EgoMeasX']*np.sin(np.radians(4)) # Number of pixels per degree,adjusted for shifting origin from centerline to top left
         
 
 
         
     #     imageTemp=cv2.cvtColor(imageTemp,cv2.COLOR_GRAY2RGB)
-    #     for idx in range(len(self.RadarAnglesH)):
+    #     for idx in range(len(self.CameraAnglesH)):
     #         if (self.CameraX[idx]<=self.RawImage.shape[1]):
     #             if self.MovingObjStatus[idx]==1:
     #                 cv2.circle(imageTemp, (int(self.CameraX[idx]),int(self.CameraY[idx])), 10, (255,105,180),3)
