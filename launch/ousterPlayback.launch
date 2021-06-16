@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- V4L Serial numbers need to be changed if required in 'dev'-->
+<launch>
+	<include file="$(find ouster_ros)/ouster.launch">
+		<arg name="replay" value="true"/>
+		<arg name="metadata" value="./ouster_meta/sensorConfig.json"/>
+		</include>
+</launch>
