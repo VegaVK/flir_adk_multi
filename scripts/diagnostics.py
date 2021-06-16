@@ -57,15 +57,15 @@ def diagnostic_listener():
             rospy.logerr("IMU Not publishing new messages")
 
         try:
-            data=rospy.wait_for_message('/velodyne_points', PointCloud2, timeout=2)
+            data=rospy.wait_for_message('/os_cloud_node/points', PointCloud2, timeout=2)
         except:
-            rospy.logerr("VELODYNE Not publishing new messages")
+            rospy.logerr("OUSTER LIDAR Not publishing new messages")
 
-        try:
-            data=rospy.wait_for_message('/zed/zed_node/rgb/image_rect_color/compressed', CompressedImage, timeout=2)
-        except:
-            # rospy.logerr("ZED Not publishing new messages")
-            pass
+        # try:
+        #     data=rospy.wait_for_message('/zed/zed_node/rgb/image_rect_color/compressed', CompressedImage, timeout=2)
+        # except:
+        #     rospy.logerr("ZED Not publishing new messages")
+        #     pass
 
 
                        

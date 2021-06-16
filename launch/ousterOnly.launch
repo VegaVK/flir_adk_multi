@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!-- V4L Serial numbers need to be changed if required in 'dev'-->
+<launch>
+	<include file="$(find ouster_ros)/ouster.launch">
+		<arg name="sensor_hostname" value="169.254.165.100"/>
+		<arg name="udp_dest" value="169.254.165.2"/>
+		<arg name="viz" value="true"/>
+		<arg name="lidar_mode" value="512x10"/>
+		<arg name="metadata" value="./ouster_meta/sensorConfig.json"/>
+		</include>
+</launch>
