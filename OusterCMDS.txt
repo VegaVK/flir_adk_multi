@@ -1,0 +1,21 @@
+******** RECORD DATA:
+
+roslaunch ouster_ros ouster.launch sensor_hostname:=169.254.165.106 udp_dest:=169.254.252.156 viz:=true  lidar_mode:=512x10 metadata:=~/ouster_example/ouster_ros/metaData/sensorConfig.json
+OR:
+roslaunch ouster_ros ouster.launch sensor_hostname:=os-122113000704.local udp_dest:=169.254.252.156 viz:=true  lidar_mode:=512x10 metadata:=./ouster_meta/sensorConfig.json
+
+
+******** REPLAY DATA:
+roslaunch ouster_ros ouster.launch replay:=true metadata:=/home/vamsi/ouster_example/ouster_ros/metaData/sensorConfig.json
+
+rosbag --clock <bag-file>
+
+
+******* SET IP ADDRESS OF LIDAR
+curl -i -X PUT http://os-122113000704.local/api/v1/system/network/ipv4/override -H 'Content-Type: application/json' --data-raw '"169.254.165.100/16"'
+
+******* GET IP ADDRESS OF LIDAR
+curl -i GET http://os-122113000704.local/api/v1/system/network/ipv4
+
+
+[PC - IP ADDRESS: 169.254.165.2]
