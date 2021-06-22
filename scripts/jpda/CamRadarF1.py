@@ -47,9 +47,9 @@ def main():
 class jpda_class():
 
     def __init__(self,DataSetType,Method,PlotArg):
-        self.TrackPubRdr=rospy.Publisher("dataAssocRdr",trackArrayRdr, queue_size=100) 
-        self.TrackPubCam=rospy.Publisher("dataAssocCam",trackArrayCam, queue_size=100) 
-        self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=100) 
+        self.TrackPubRdr=rospy.Publisher("dataAssocRdr",trackArrayRdr, queue_size=2) 
+        self.TrackPubCam=rospy.Publisher("dataAssocCam",trackArrayCam, queue_size=2) 
+        self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=2) 
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
         self.YoloClassList=[0,1,2] # For Yolov3_flir
         self.GateThreshRdr =1# Scaling factor, threshold for gating

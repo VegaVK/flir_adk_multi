@@ -3,6 +3,7 @@
 <launch>
 	<include file="$(find ouster_ros)/ouster.launch">
 		<arg name="replay" value="true"/>
+		<arg name="viz" value="true"/>
 		<arg name="metadata" value="./ouster_meta/sensorConfig.json"/>
 		</include>
 </launch>
