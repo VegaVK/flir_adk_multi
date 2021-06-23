@@ -11,10 +11,8 @@ import numpy as np
 def main():
     rospy.init_node('Panorama', anonymous=True)
     vsInst=vid_stitch()
-    try:
-        rospy.spin()
-    except KeyboardInterrupt:
-        print("Shutting down")
+    rospy.spin()
+
 
 class vid_stitch:
 
@@ -107,6 +105,10 @@ class vid_stitch:
 
 
 if __name__=='__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("Shutting down")
+    
 #######################
 
