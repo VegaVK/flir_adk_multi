@@ -44,7 +44,7 @@ class image_extractor:
             print(self.fileCounter)
             fileNumStr=str(self.fileCounter)
             fileNumStr=fileNumStr.zfill(5)
-            cv2.imwrite('/home/vamsi/RainDataTrain/bag11/'+fileNumStr+'.jpeg',imageFromBag)
+            cv2.imwrite('/home/vamsi/RainDataTrain/Jul12Bag8/'+fileNumStr+'.jpeg',imageFromBag)
             self.fileCounter=self.fileCounter+1
         else:
             self.fileCounter=self.fileCounter+1

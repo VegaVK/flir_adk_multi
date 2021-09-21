@@ -50,6 +50,8 @@ class jpda_class():
         self.TrackPubRdr=rospy.Publisher("dataAssocRdr",trackArrayRdr, queue_size=2) 
         self.TrackPubCam=rospy.Publisher("dataAssocCam",trackArrayCam, queue_size=2) 
         self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=2) 
+        filePathPrefix=str("/home/vamsi/Tracking/py-motmetrics/motmetrics/res_dir/")
+        self.DestF=open((filePathPrefix+'seq1Jul12Bag8'+'.txt'),"w")
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
         self.YoloClassList=[0,1,2] # For Yolov3_flir
         self.GateThreshRdr =1# Scaling factor, threshold for gating
@@ -77,7 +79,23 @@ class jpda_class():
         self.HorzOffset=0# For translation from radar to cam coordinates, manual offset
         self.CamXOffset=2.36#=93 inches, measured b/w cam and Rdr, in x direction
         self.CamZoffset=1 # Roughly 40 inches
+        self.imageTime=Header()
         self.BBoxStore=BoundingBoxes()
+        
+        #Params for writing tracks to TXT:
+        self.delta_x = 0
+        self.delta_y = 0 # Assuming that the radar and camera are on same centerline
+        self.delta_z = 1.0414/2
+        self.H_FOV=190
+        self.V_FOV=41 #Calculated based on aspect ratio
+        self.HorzOffsetTXT=0 # Manual horizontal (Y-direction) offset for radar in pixels
+        self.VertOffsetTXT=-30 # Manual vertical (Z-direction) offset for radar in pixels
+        self.ImageExists=0
+        self.BBheight=90
+        self.BBWidth=90 # For now, static
+        self.FrameInit=1
+        self.UseCamTracksOnly=1 #1 if using only camera tracks, 0 if using combined tracks for eval
+        
         if DataSetType=="NuSc":
             rospy.Subscriber('/cam_front/raw', Image, self.buildImage)
             rospy.Subscriber('/vel', Twist, self.Odom1NuSc) 
@@ -85,6 +103,39 @@ class jpda_class():
             rospy.Subscriber('/imu', Imu, self.Odom3NuSc)
             rospy.Subscriber('/radar_front', BoundingBoxes, self.RdrMsrmtsNuSc)
         elif DataSetType=="MKZ":
+            self.CamFOV=190.0
+            rospy.Subscriber('/Thermal_Panorama', Image, self.buildImage)
+            rospy.Subscriber('/imu/data', Imu, self.Odom2MKZ) # TODO: fix after IMU is available
+            rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
+            rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes,self.BBoxBuilder)
+            rate=rospy.Rate(10) # 20 Hz
+            while not rospy.is_shutdown():
+                # CycleStartTime=time.time()
+                # startTime=time.time()
+                # rospy.Subscriber('/as_tx/objects', ObjectWithCovarianceArray,self.RdrMsrmtsMKZ)
+                # rospy.Subscriber('/darknet_ros/found_object', ObjectCount,self.CamMsrmts)
+                
+                self.RdrMsrmtsMKZ(rospy.wait_for_message('/as_tx/objects', ObjectWithCovarianceArray))
+                self.CamMsrmts(rospy.wait_for_message('/darknet_ros/found_object', ObjectCount))
+
+                # # print('TOTAL for RDR:' + str(time.time()-startTime))
+                
+                # # startTime=time.time()
+                # try:
+                #    rospy.Subscriber('/darknet_ros/found_object', ObjectCount,self.CamMsrmts)
+                # except:
+                #     rospy.loginfo('No Camera Data/Bounding Boxes found')
+                #     pass
+                # print('TOTAL for CAM:' + str(time.time()-startTime))
+                # startTimeCom=time.time()
+                
+                # print('Time Combining:' + str(time.time()-startTimeCom))
+                # print('Total Cycle Time:' + str(time.time()-CycleStartTime))
+                self.CamRdrCombine()
+                rate.sleep()
+                
+        elif DataSetType=="matlab":
+            self.CamFOV=50
             rospy.Subscriber('/Thermal_Panorama', Image, self.buildImage)
             rospy.Subscriber('/imu/data', Imu, self.Odom2MKZ) # TODO: fix after IMU is available
             rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
@@ -122,6 +173,9 @@ class jpda_class():
             self.image=[]
         self.image=self.bridge.imgmsg_to_cv2(data, "rgb8")
         self.imageTime=data.header
+        self.ImageExists=1
+        self.writeToFile() #Only write to file everytime a new frame is published
+
 
     def Odom1NuSc(self,data):
         self.Vt =data.linear.x 
@@ -140,7 +194,52 @@ class jpda_class():
         self.Vt=data.twist.linear.x
         self.velX=self.Vt # For use in calculating velocity of cut in vehicle(tracking target), Vc 
 
+    def writeToFile(self):
+        if not hasattr(self,'CombinedTracks'):
+            return
+        # self.Readoings=[]
+        # n=len(self.RadarTracks)
+        RadarAnglesH=0.0
+        RadarAnglesV=0.0
+        frame=self.FrameInit
+        self.FrameInit+=1
+        if self.UseCamTracksOnly==1:
+            writeTracks=self.CurrentCamTracks
+        else:
+            writeTracks=self.CombinedTracks
 
+        for idx in range(len(writeTracks.tracks)):
+            # if (data.objects[idx].pose.pose.position.x==0.0) and (data.objects[idx].pose.pose.position.y==0.0) and (data.objects[idx].pose.covariance[0]==0.0):
+            #     continue #Zero entry, so skip it
+            # else: #write to file
+            # <frame>, <id>, <bb_left>, <bb_top>, <bb_width>, <bb_height>, <conf>, <x>, <y>, <z>
+            
+            id=int(idx+1) # TODO: This is temp, not true ID of car
+            # RadarX=data.objects[idx].pose.pose.position.x+self.delta_x
+            # RadarY=data.objects[idx].pose.pose.position.y
+            # RadarZ=0.0+self.delta_z
+            # RadarAnglesH=-np.degrees(np.arctan(np.divide(RadarY,RadarX)))
+            # RadarAnglesV=np.abs(np.degrees(np.arctan(np.divide(RadarZ,RadarX)))) #will always be negative, so correct for it
+            
+
+            
+            if self.ImageExists==1:
+                # imageTemp = self.image
+                # print(imageTemp.shape)
+                # CameraX=RadarAnglesH*(self.image.shape[1]/self.H_FOV) + self.image.shape[1]/2 +self.HorzOffsetTXT# Number of pixels per degree,adjusted for shifting origin from centerline to top left
+                # CameraY=RadarAnglesV*(self.image.shape[0]/self.V_FOV) +256 +self.VertOffsetTXT -RadarX*np.sin(np.radians(4)) # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+                #Write to File
+                bb_left=int(writeTracks.tracks[idx].yPx.data)
+                bb_top=int(writeTracks.tracks[idx].zPx.data)
+                bb_width=int(writeTracks.tracks[idx].width.data)
+                bb_height=int(writeTracks.tracks[idx].height.data)
+                x=-1 # Fillers
+                y=-1
+                z=-1
+                conf=1
+                outLine=str(frame)+' '+str(id)+' '+str(bb_left)+' '+str(bb_top)+' '+str(bb_width)+' '+str(bb_height)+' '+str(conf)+' '+str(x)+' '+str(y)+' '+str(z)+'\n'
+                # print(outLine)
+                self.DestF.write(outLine)
 
     def CamIOUcheck(self,checkIdx):
         #Return boolean. checks if IOU of given SensorIndex over any Current tracks is greater than threshold
@@ -180,7 +279,9 @@ class jpda_class():
                     if len(R)==0:
                         R=9000 #Arbitrarily large value
                     R=np.asarray(R)
-                    if (np.min(R)<=self.trackInitCamThresh) and (self.CamIOUcheck(np.argmin(R))): # Then move this to current track # Inherent assumption here is that only one will be suitable
+                    # print()
+                    # print(R)
+                    if (np.min(R)<self.trackInitCamThresh): # Then move this to current track # Inherent assumption here is that only one will be suitable
                         jdx=np.argmin(R)
                         if  not hasattr(self, 'CurrentCamTracks'):
                             self.CurrentCamTracks=trackArrayCam()
@@ -202,7 +303,7 @@ class jpda_class():
                         InitiatedCamTracks.tracks[idx].yPx.data=(SensorData[jdx].xmax+SensorData[jdx].xmin)/2
                         InitiatedCamTracks.tracks[idx].zPx.data=(SensorData[jdx].ymax+SensorData[jdx].ymin)/2
                         InitiatedCamTracks.tracks[idx].confidence=SensorData[jdx].confidence
-                        Pk=np.diag([10,10,10,10,10,10,10,10]) # Initial covariance matrix
+                        Pk=np.diag([5,5,5,5,50,50,50,50]) # Initial covariance matrix
                         InitiatedCamTracks.tracks[idx].P=Mat_buildROS(Pk)
                         self.CurrentCamTracks.tracks=np.append(self.CurrentCamTracks.tracks,InitiatedCamTracks.tracks[idx])
                         toDel.append(idx)
@@ -216,7 +317,7 @@ class jpda_class():
                 toDel2=[]
                 for idx in range(len(self.InitiatedCamTracks.tracks)):
                     self.InitiatedCamTracks.tracks[idx].Stat.data=self.InitiatedCamTracks.tracks[idx].Stat.data-1
-                    if self.InitiatedCamTracks.tracks[idx].Stat.data<=-4:
+                    if self.InitiatedCamTracks.tracks[idx].Stat.data<0:
                         toDel2.append(idx)
                 self.InitiatedCamTracks.tracks=np.delete(self.InitiatedCamTracks.tracks,toDel2)
                 # Then concatenate remaining sensor Data for future initation
@@ -331,7 +432,7 @@ class jpda_class():
                     self.InitiatedRdrTracks.tracks[-1].x.data=SensorData[idx].pose.position.x
                     self.InitiatedRdrTracks.tracks[-1].y.data=SensorData[idx].pose.position.y
                     self.InitiatedRdrTracks.tracks[-1].Vc.data=np.sqrt(SensorData[idx].vx_comp**2+SensorData[idx].vy_comp**2)
-                    self.InitiatedRdrTracks.tracks[-1].B.data=self.psi -(np.arctan(SensorData[idx].pose.position.y/SensorData[idx].pose.position.x))
+                    self.InitiatedRdrTracks.tracks[-1].B.data=self.psi -(np.arctan(SensorData[idx].pose.position.y/(0.0001 if (SensorData[idx].pose.position.x)==0.0 else (SensorData[idx].pose.position.x))))
                     # TODO: Improve Beta estimate by taking into account relative Vx(invert heading if object istraveling towards car)
                     
 
@@ -344,16 +445,18 @@ class jpda_class():
                     self.InitiatedRdrTracks.tracks[-1].x.data=SensorData[idx].pose.position.x
                     self.InitiatedRdrTracks.tracks[-1].y.data=SensorData[idx].pose.position.y
                     self.InitiatedRdrTracks.tracks[-1].Vc.data=np.sqrt(SensorData[idx].vx_comp**2+SensorData[idx].vy_comp**2)
-                    self.InitiatedRdrTracks.tracks[-1].B.data=self.psi -(np.arctan(SensorData[idx].pose.position.y/SensorData[idx].pose.position.x))
+                    self.InitiatedRdrTracks.tracks[-1].B.data=self.psi -(np.arctan(SensorData[idx].pose.position.y/(0.0001 if (SensorData[idx].pose.position.x)==0.0 else (SensorData[idx].pose.position.x))))
                     # TODO: Improve Beta estimate by taking into account relative Vx(invert heading if object istraveling towards car)
 
     def trackDestructor(self,SensorData):
+        if not any(SensorData):
+            return
         if isinstance(SensorData[0],CamObj): 
             if not (hasattr(self,'CurrentCamTracks')):
                 return
             toDel=[]
             for idx in range(len(self.CurrentCamTracks.tracks)):
-                if self.CurrentCamTracks.tracks[idx].Stat.data>=18:# Testing, made less persistent
+                if self.CurrentCamTracks.tracks[idx].Stat.data>=2:# Testing, made less persistent
                     toDel.append(idx)
             self.CurrentCamTracks.tracks=np.delete(self.CurrentCamTracks.tracks,toDel)
         elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
@@ -361,11 +464,13 @@ class jpda_class():
                 return
             toDel=[]
             for idx in range(len(self.CurrentRdrTracks.tracks)):
-                if self.CurrentRdrTracks.tracks[idx].Stat.data>=14: # If no measurements associated for 4 steps
+                if self.CurrentRdrTracks.tracks[idx].Stat.data>=4: # If no measurements associated for 4 steps
                     toDel.append(idx)
             self.CurrentRdrTracks.tracks=np.delete(self.CurrentRdrTracks.tracks,toDel)
 
     def trackMaintenance(self,SensorData):
+        if not any(SensorData):
+            return
         if isinstance(SensorData[0],CamObj): 
             if  not hasattr(self, 'CurrentCamTracks'):
                 return
@@ -432,8 +537,8 @@ class jpda_class():
                     CirClr.append(np.array([255,0,0]))
                 else: # Candidate for Destructor-orange
                     CirClr.append(np.array([0,165,255])) 
-            CameraX=np.dot(RadarAnglesH,(self.image.shape[1]/190)) + self.image.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
-            CameraY=np.dot(RadarAnglesV,(self.image.shape[0]/39.375)) +512/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+            CameraX=np.dot(RadarAnglesH,(self.image.shape[1]/self.CamFOV)) + self.image.shape[1]/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
+            CameraY=np.dot(RadarAnglesV,(self.image.shape[0]/(39.375))) +480/2 # Number of pixels per degree,adjusted for shifting origin from centerline to top left
             CirClr=np.array(CirClr)
             CameraX=np.array(CameraX)
             for idx3 in range(len(CameraX)):
@@ -482,7 +587,7 @@ class jpda_class():
         for rdx in range(len(self.CurrentRdrTracks.tracks)):
             temp1=np.divide(self.CurrentRdrTracks.tracks[rdx].y.data,self.CurrentRdrTracks.tracks[rdx].x.data)
             temp2=-np.degrees(np.arctan(temp1.astype(float)))
-            LocalRdrYArr.append(np.dot(temp2,(self.image.shape[1]/190)) + self.image.shape[1]/2+self.HorzOffset) # Gives all Y-coord (pixels)  of all radar tracks 
+            LocalRdrYArr.append(np.dot(temp2,(self.image.shape[1]/self.CamFOV)) + self.image.shape[1]/2+self.HorzOffset) # Gives all Y-coord (pixels)  of all radar tracks 
         for jdx in range(n):
             radius=(self.CurrentCamTracks.tracks[jdx].width.data+self.CurrentCamTracks.tracks[jdx].height.data)/2+self.CombGateThresh
             centerY=self.CurrentCamTracks.tracks[jdx].yPx.data
@@ -507,6 +612,7 @@ class jpda_class():
         # print('Time for Track Destr:' + str(time.time()-startTime03))
         # startTime04=time.time()
         self.trackPlotter()
+        
         # print('Time for Track Plotter:' + str(time.time()-startTime04))
         # startTime05=time.time()
         if hasattr(self,'CurrentCamTracks') or hasattr(self,'CurrentRdrTracks'):
@@ -744,21 +850,53 @@ class jpda_class():
                             Yk.append(temp)
                         else:
                             Yk.append([])
-            elif isinstance(SensorData[0],CamObj): # Just give the first measurement (Again, assuming that there will only be one close measrument)
-                Yk=[]
+            elif isinstance(SensorData[0],CamObj): # Silimar To Radar above, gives closest unused sensor index
+                # Sensor indices is a 2D python list, not numpy array
+                usedSensorIndices=[]
+                Yk=[] # A python list of sensor measurements corresponding to each CurrentTrack
                 for idx in range(len(self.CurrentCamTracks.tracks)):
+                    gateValX=[]
+                    gateValY=[]
+                    gateValRMS=[]
                     if len(SensorIndices[idx])==0:
                         Yk.append([])
                         continue
                     else:
-                        Yk.append(SensorData[SensorIndices[idx][0]])
+                        # print(len(SensorIndices[idx]))
+                        for jdx in range(len(SensorIndices[idx])):
+                            gateValX.append(np.abs((SensorData[SensorIndices[idx][jdx]].xmin+SensorData[SensorIndices[idx][jdx]].xmax)/2-self.CurrentCamTracks.tracks[idx].yPx.data))
+                            gateValY.append(np.abs((SensorData[SensorIndices[idx][jdx]].ymin+SensorData[SensorIndices[idx][jdx]].ymax)/2-self.CurrentCamTracks.tracks[idx].zPx.data))
+                            gateValRMS.append(np.sqrt(((gateValX[jdx])**2+(gateValY[jdx])**2).astype(float)))
+                        if np.min(gateValRMS)<=self.GateThreshCam:
+                            sensIdx=int(np.argmin(np.array(gateValRMS)))
+                            gateValRMS=np.array(gateValRMS)
+                            temp=SensorData[sensIdx]
+                            while sensIdx in usedSensorIndices:
+                                gateValRMS=np.delete(gateValRMS,sensIdx)
+                                if len(gateValRMS)==0:
+                                    temp=[]
+                                    break
+                                sensIdx=int(np.argmin(np.array(gateValRMS)))
+                                temp=SensorData[sensIdx]
+                            usedSensorIndices.append(sensIdx)
+                            Yk.append(temp)
+                        else:
+                            Yk.append([])
+                # Yk=[]
+                # for idx in range(len(self.CurrentCamTracks.tracks)):
+                #     if len(SensorIndices[idx])==0:
+                #         Yk.append([])
+                #         continue
+                #     else:
+                #         Yk.append(SensorData[SensorIndices[idx][0]])
 
         return Yk # An Array with same len as CurrentRdrTracks.tracks[]
 
     def KalmanPropagate(self,SensorData):
-        delT=(SensorData[0].header.stamp-self.CurrentRdrTracks.header.stamp) 
-        delT=delT.to_sec()
-        if isinstance(SensorData[0],CamObj):
+        
+        if isinstance(SensorData[0],CamObj) and  hasattr(self,'CurrentRdrTracks'): # TODO: hasattr part is just so we can get delT, this needs to be fixed
+            delT=(SensorData[0].header.stamp-self.CurrentRdrTracks.header.stamp) 
+            delT=delT.to_sec()
             for idx in range(len(self.CurrentCamTracks.tracks)):
                 Fk=np.eye(8)
                 Fk[0,4]=delT
@@ -780,6 +918,8 @@ class jpda_class():
                 self.CurrentCamTracks.tracks[idx].heightDot.data=StateVec[7]
 
         elif isinstance(SensorData[0],RadarObj) or isinstance(SensorData[0],RadarObjMKZ):
+            delT=(SensorData[0].header.stamp-self.CurrentRdrTracks.header.stamp) 
+            delT=delT.to_sec()
             for idx in range(len(self.CurrentRdrTracks.tracks)):
                 x=self.CurrentRdrTracks.tracks[idx].x.data
                 y=self.CurrentRdrTracks.tracks[idx].y.data
@@ -807,10 +947,10 @@ class jpda_class():
             Yk=self.DataAssociation(SensorData,SensorIndices,'Greedy') # The Camera always uses Greedy method
             for idx in range(len(Yk)):
                 if not Yk[idx]: # No suitable measurements found, move to potential destruct
-                    if  self.CurrentCamTracks.tracks[idx].Stat.data>=10:
+                    if  self.CurrentCamTracks.tracks[idx].Stat.data<=4:
                          self.CurrentCamTracks.tracks[idx].Stat.data+=1
                     else:
-                        self.CurrentCamTracks.tracks[idx].Stat.data=10
+                        self.CurrentCamTracks.tracks[idx].Stat.data=4
                     continue
                 else:
                     #Reset status of track as a suitable msrmt has been found
@@ -907,6 +1047,9 @@ class jpda_class():
                         (SensorData[jdx].xmax-SensorData[jdx].xmin),\
                             (SensorData[jdx].ymax-SensorData[jdx].ymin)])
                 Temp=((y.reshape(4,1)-y_est).T.dot(SkInv)).dot(y.reshape(4,1)-y_est)
+                # print('GateVal')
+                # print(Temp)
+                # print(jdx)
                 if (Temp[0]<=self.GateThreshCam**2):
                     SensorIdxOut.append(jdx)
         
@@ -940,6 +1083,7 @@ class jpda_class():
         self.CamReadings=[]
         for idx in range(len(data.bounding_boxes)):
             if (data.bounding_boxes[idx].id in self.YoloClassList) and (data.bounding_boxes[idx].probability>0.3): # Only add if confident of detection
+            # if (data.bounding_boxes[idx].probability>0.3):
                 self.CamReadings=np.append(self.CamReadings,CamObj())
                 self.CamReadings[-1].header=data.header
                 self.CamReadings[-1].xmin=data.bounding_boxes[idx].xmin
@@ -951,6 +1095,7 @@ class jpda_class():
         self.CamReadings=np.asarray(self.CamReadings)
         #TODO: Change State Vec to just position, no widths/width rates
         self.CamRawBBPlotter(self.CamReadings)
+        
         self.trackManager(self.CamReadings)
 
 
@@ -987,11 +1132,12 @@ class jpda_class():
         self.RdrReadings=[]
         
         for idx in range(len(data.objects)):
-            
+            if (data.objects[idx].pose.pose.position.x==0.0) and (data.objects[idx].pose.pose.position.y==0.0) and (data.objects[idx].pose.covariance[0]==0.0):
+                continue #Zero entry, so skip it
             self.RdrReadings=np.append(self.RdrReadings,RadarObjMKZ())
             self.RdrReadings[-1].pose=data.objects[idx].pose.pose
-            self.RdrReadings[-1].vx=data.objects[idx].twist.twist.linear.x
-            self.RdrReadings[-1].vy=data.objects[idx].twist.twist.linear.y
+            self.RdrReadings[-1].vx=data.objects[idx].twist.twist.linear.x # Not used?
+            self.RdrReadings[-1].vy=data.objects[idx].twist.twist.linear.y  # Not used?
             self.RdrReadings[-1].vx_comp=self.velX+data.objects[idx].twist.twist.linear.x
             self.RdrReadings[-1].vy_comp=self.velY+data.objects[idx].twist.twist.linear.y
             self.RdrReadings[-1].header=data.objects[idx].header

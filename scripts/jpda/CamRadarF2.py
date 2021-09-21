@@ -23,6 +23,7 @@ from flir_adk_multi.msg import trackArrayRdr
 from flir_adk_multi.msg import trackRdr
 from flir_adk_multi.msg import trackArrayCam
 from flir_adk_multi.msg import trackCam
+from sensor_msgs.msg import PointCloud2
 from dbw_mkz_msgs.msg import WheelSpeedReport
 from utils import CamObj
 from utils import RadarObj
@@ -47,9 +48,9 @@ def main():
 class jpda_class():
 
     def __init__(self,DataSetType,Method,PlotArg):
-        self.TrackPubRdr=rospy.Publisher("dataAssocRdr",trackArrayRdr, queue_size=100) 
-        self.TrackPubCam=rospy.Publisher("dataAssocCam",trackArrayCam, queue_size=100) 
-        self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=100) 
+        self.TrackPubRdr=rospy.Publisher("dataAssocRdr",trackArrayRdr, queue_size=2) 
+        self.TrackPubCam=rospy.Publisher("dataAssocCam",trackArrayCam, queue_size=2) 
+        self.image_pub=rospy.Publisher("fusedImage",Image, queue_size=2) 
         filePathPrefix=str("/home/vamsi/Tracking/py-motmetrics/motmetrics/res_dir/")
         self.DestF=open((filePathPrefix+'seq1'+'.txt'),"w")
         # self.YoloClassList=[0,1,2,3,5,7] # For NuSc
@@ -109,6 +110,32 @@ class jpda_class():
             rospy.Subscriber('/imu/data', Imu, self.Odom2MKZ) # TODO: fix after IMU is available
             rospy.Subscriber('/vehicle/twist', TwistStamped,self.Odom3MKZ)
             rospy.Subscriber('/darknet_ros/bounding_boxes', BoundingBoxes,self.BBoxBuilder)
+            rospy.Subscriber('/os_cloud_node/points', PointCloud2,self.writeToFile) #Only write to file everytime a new lidar PCL is published
+            rate=rospy.Rate(10) # 20 Hz
+            while not rospy.is_shutdown():
+                # CycleStartTime=time.time()
+                # startTime=time.time()
+                # rospy.Subscriber('/as_tx/objects', ObjectWithCovarianceArray,self.RdrMsrmtsMKZ)
+                # rospy.Subscriber('/darknet_ros/found_object', ObjectCount,self.CamMsrmts)
+                
+                self.RdrMsrmtsMKZ(rospy.wait_for_message('/as_tx/objects', ObjectWithCovarianceArray))
+                self.CamMsrmts(rospy.wait_for_message('/darknet_ros/found_object', ObjectCount))
+
+                # # print('TOTAL for RDR:' + str(time.time()-startTime))
+                
+                # # startTime=time.time()
+                # try:
+                #    rospy.Subscriber('/darknet_ros/found_object', ObjectCount,self.CamMsrmts)
+                # except:
+                #     rospy.loginfo('No Camera Data/Bounding Boxes found')
+                #     pass
+                # print('TOTAL for CAM:' + str(time.time()-startTime))
+                # startTimeCom=time.time()
+                
+                # print('Time Combining:' + str(time.time()-startTimeCom))
+                # print('Total Cycle Time:' + str(time.time()-CycleStartTime))
+                self.CamRdrCombine()
+                rate.sleep()
         elif DataSetType=="matlab":
             self.CamFOV=50
             rospy.Subscriber('/Thermal_Panorama', Image, self.buildImage)
@@ -149,7 +176,7 @@ class jpda_class():
         self.image=self.bridge.imgmsg_to_cv2(data, "rgb8")
         self.imageTime=data.header
         self.ImageExists=1
-        self.writeToFile() #Only write to file everytime a new frame is published
+        
 
 
     def Odom1NuSc(self,data):
@@ -169,7 +196,8 @@ class jpda_class():
         self.Vt=data.twist.linear.x
         self.velX=self.Vt # For use in calculating velocity of cut in vehicle(tracking target), Vc 
 
-    def writeToFile(self):
+    def writeToFile(self,data):
+        # print('Writing ToFile')
         if not hasattr(self,'CombinedTracks'):
             return
         # self.Readoings=[]
